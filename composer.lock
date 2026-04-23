@@ -1,0 +1,96 @@
+{
+    "_readme": [
+        "This file locks the dependencies of your project to a known state",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
+        "This file is @generated automatically"
+    ],
+    "content-hash": "d30c0dc14cf91217c373b7d4b4da89b1",
+    "packages": [
+        {
+            "name": "itmar/block-class-package",
+            "version": "v1.4.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/itmaroon/block-class-package.git",
+                "reference": "911cf1a100b0696a1cef76ae096ee3776a7a15c8"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/itmaroon/block-class-package/zipball/911cf1a100b0696a1cef76ae096ee3776a7a15c8",
+                "reference": "911cf1a100b0696a1cef76ae096ee3776a7a15c8",
+                "shasum": ""
+            },
+            "require": {
+                "itmar/loader-package": "^1.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Itmar\\BlockClassPackage\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "itmaroon",
+                    "email": "master@itmaroon.net"
+                }
+            ],
+            "description": "Gutenberg block class package",
+            "support": {
+                "issues": "https://github.com/itmaroon/block-class-package/issues",
+                "source": "https://github.com/itmaroon/block-class-package/tree/v1.4.2"
+            },
+            "time": "2025-12-05T00:59:09+00:00"
+        },
+        {
+            "name": "itmar/loader-package",
+            "version": "v1.2.2",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/itmaroon/loader-package.git",
+                "reference": "0327c311f2a057912e62ffb36f9bc16e5af59b0a"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/itmaroon/loader-package/zipball/0327c311f2a057912e62ffb36f9bc16e5af59b0a",
+                "reference": "0327c311f2a057912e62ffb36f9bc16e5af59b0a",
+                "shasum": ""
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Itmar\\Autoloader\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "itmaroon",
+                    "email": "master@itmaroon.net"
+                }
+            ],
+            "description": "This package provides the ability to load classes via Composer's PSR-4 configuration without relying on the autoloader. This is useful when you want to avoid class conflicts between loaders in multiple plugins.",
+            "support": {
+                "issues": "https://github.com/itmaroon/loader-package/issues",
+                "source": "https://github.com/itmaroon/loader-package/tree/v1.2.2"
+            },
+            "time": "2025-12-01T05:31:51+00:00"
+        }
+    ],
+    "packages-dev": [],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "stability-flags": [],
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": [],
+    "platform-dev": [],
+    "plugin-api-version": "2.6.0"
+}

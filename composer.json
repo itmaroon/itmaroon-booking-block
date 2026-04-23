@@ -1,0 +1,10 @@
+{
+    "autoload": {
+        "psr-4": {
+        "Itmar\\BookingClassPackage\\": "booking-class-package/src/"
+        }
+    },
+    "require": {
+        "itmar/block-class-package": "^1.3"
+    }
+}

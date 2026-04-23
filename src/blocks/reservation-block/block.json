@@ -1,0 +1,64 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "itmar/reservation-block",
+	"version": "0.1.0",
+	"title": "RESERVATION BLOCK",
+	"category": "widgets",
+	"supports": {
+		"html": false
+	},
+	"attributes": {
+		"resourceId":{
+			"type":"number",
+			"default":0
+		},
+		"resourceSlug":{
+			"type": "string",
+			"default": ""
+		},
+		"resourceRest":{
+			"type": "string",
+			"default": ""
+		},
+		"selectedSlug":{
+			"type": "string",
+			"default": ""
+		},
+		"selectedRest":{
+			"type": "string",
+			"default": ""
+		},
+		"calendarTableId":{
+			"type": "string",
+			"default": ""
+		},
+		"bookingTableId":{
+			"type": "string",
+			"default": ""
+		},
+		
+		"capacityDefault":{
+			"type":"number",
+			"default":1
+		}, 
+		"closedWeekdays":{
+			"type":"array",
+			"default":[]
+		},
+		"confirmThings":{
+			"type":"array",
+			"default":[]
+		},
+		"lastClickedCell": {
+			"type": "object",
+			"default": null
+		}
+	},
+	
+	"textdomain": "itmaroon-booking-block",
+	"editorScript": "file:./index.js",
+	"editorStyle": "file:./index.css",
+	"style": "file:./style-index.css",
+	"viewScript": "file:./view.js"
+}

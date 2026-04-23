@@ -1,0 +1,107 @@
+/*!*****************************************************************************************************************************************************************************************************************************************************************************!*\
+  !*** css ../../node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[4].use[1]!../../node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[4].use[2]!../../node_modules/sass-loader/dist/cjs.js??ruleSet[1].rules[4].use[3]!./src/blocks/reservation-block/editor.scss ***!
+  \*****************************************************************************************************************************************************************************************************************************************************************************/
+@import url(https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&family=Noto+Serif+JP:wght@300;400;500;600;700;900&family=Zen+Maru+Gothic:wght@400;500;700;900&family=M+PLUS+1+Code:wght@300;400;500;600;700&display=swap);
+/*!*********************************************************************************************************************************************************************************************************************************************************************************!*\
+  !*** css ../../node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[4].use[1]!../../node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[4].use[2]!../../node_modules/sass-loader/dist/cjs.js??ruleSet[1].rules[4].use[3]!./src/blocks/reservation-block/editor.scss (1) ***!
+  \*********************************************************************************************************************************************************************************************************************************************************************************/
+@charset "UTF-8";
+/**
+ * The following styles get applied inside the editor only.
+ *
+ * Replace them with your own styles or remove the file completely.
+ */
+/* リセットCSS
+  ===================================== */
+.wp-block-itmar-reservation-block {
+  border: 1px dotted #f00;
+}
+.addNum_row {
+  align-items: last baseline;
+  -moz-column-gap: 10px;
+       column-gap: 10px;
+  margin-bottom: 20px;
+}
+.slot-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.slot-matrix-table th, .slot-matrix-table td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: center;
+}
+.slot-matrix-table th {
+  background: #f0f0f0;
+  position: sticky;
+  top: 0;
+}
+.slot-matrix-table .time-label {
+  position: sticky;
+  right: 0;
+  background: #f0f0f0;
+  font-weight: bold;
+}
+.slot-matrix-table .slot-cell {
+  cursor: pointer;
+}
+.slot-matrix-table .slot-cell.is-booked {
+  background-color: #f8d7da;
+}
+.slot-matrix-table .slot-cell.is-free {
+  background-color: #d4edda;
+}
+.slot-matrix-table .slot-cell:hover {
+  opacity: 0.8;
+}
+.itmar_slot_status .components-radio-control {
+  width: 100%;
+}
+.itmar_slot_status .components-radio-control .components-flex {
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: row;
+  justify-content: center;
+  gap: 2px;
+  row-gap: 6px;
+}
+.itmar_slot_status .components-radio-control__option {
+  width: 30%;
+}
+.itmar_slot_status .components-radio-control__option input {
+  display: none;
+}
+.itmar_slot_status .components-radio-control__option input[type=radio]:checked + label {
+  background-color: #0085ba;
+  color: #fff;
+  text-shadow: 0 -1px 1px #005d82, -1px 0 1px #005d82, 0 1px 1px #005d82, 1px 0 1px #005d82;
+}
+.itmar_slot_status .components-radio-control__option label {
+  display: block;
+  cursor: pointer;
+  width: 100%;
+  margin: 0;
+  padding: 9px 5px;
+  background: #f7f7f7;
+  color: #555e64;
+  text-align: center;
+  line-height: 1;
+  transition: 0.2s;
+  border: solid 1px #ccc;
+  border-right-style: none;
+  box-shadow: inset 0 -1px 0 #ccc;
+  max-width: 100%;
+}
+.itmar_slot_status .components-radio-control__option label:hover {
+  background: #fafafa;
+  border-color: #999;
+  box-shadow: inset 0 -1px 0 #999;
+  color: #23282d;
+}
+.itmar_slot_status .components-radio-control__option:first-child label {
+  border-radius: 0 3px 3px 0;
+  border-right-style: solid;
+}
+.itmar_slot_status .components-radio-control__option:last-child label {
+  border-radius: 3px 0 0 3px;
+}

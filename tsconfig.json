@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "jsx": "react-jsx",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["react", "node", "jquery"],
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "*": ["node_modules/*", "../../node_modules/*"]
+    },
+    "resolveJsonModule": true,
+    /* 以下の設定が重要です */
+    "typeRoots": [
+      "./node_modules/@types",
+      "../../node_modules/@types"
+    ],
+    
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "build"]
+}
