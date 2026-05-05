@@ -72,76 +72,147 @@ __webpack_require__.r(__webpack_exports__);
 
 // 2次元配列に組み替える関数
 const prepareMatrix = rows => {
-  // 1. ユニークな時間軸（縦軸）とユニット軸（横軸）を抽出してソート
-  const times = [...new Set(rows.map(r => r.start_time))].sort();
-  const units = Array.from(new Map(rows.map(r => [r.unit_id, {
-    id: r.unit_id,
-    name: r.unit_name
-  }])).values());
+  // 1. ユニークな時間軸（縦軸）
+  // 開始時間でソートしつつ、表示用に終了時間も紐付けて管理できるようにします
+  const timeLabels = Array.from(new Map(rows.map(r => [r.start_time, {
+    start: r.start_time,
+    end: r.end_time
+  }])).values()).sort((a, b) => (a.start || "").localeCompare(b.start || ""));
 
-  // 2. マトリックスの生成 { [time]: { [unit_id]: SlotDetail } }
+  // 2. ユニークなユニット軸（横軸：名前の昇順でソート）
+  const units = Array.from(new Map(rows.map(r => [Number(r.unit_id), {
+    id: Number(r.unit_id),
+    name: r.unit_name
+  }])).values()).sort((a, b) => a.name.localeCompare(b.name, "ja")); // 日本語の名前順でソート
+
+  // 3. マトリックスの生成 { [time]: { [unit_id]: SlotDetail } }
   const matrix = {};
-  times.forEach(time => {
-    matrix[time] = {};
+  timeLabels.forEach(t => {
+    const startTime = t.start || "";
+    matrix[startTime] = {};
     units.forEach(unit => {
-      const match = rows.find(r => r.start_time === time && r.unit_id === unit.id);
+      const match = rows.find(r => r.start_time === startTime && Number(r.unit_id) === unit.id);
       if (match) {
-        matrix[time][unit.id] = match;
+        matrix[startTime][unit.id] = match;
       }
     });
   });
   return {
-    times,
+    timeLabels,
     units,
     matrix
   };
 };
 function SlotEditModal({
+  resourceId,
+  selDate,
   rows,
-  onClose
+  onClose,
+  onSaveSuccess
 }) {
   // モーダル内で編集中のデータを保持するステート
   const [localRows, setLocalRows] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_2__.useState)(rows);
   const [isSaving, setIsSaving] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_2__.useState)(false);
   const {
-    times,
+    timeLabels,
     units,
     matrix
-  } = prepareMatrix(rows);
+  } = prepareMatrix(localRows);
 
   // セルの値を書き換えるハンドラ
   const updateCell = (detailId, key, value) => {
-    setLocalRows(prev => prev.map(row => row.detail_id === detailId ? {
-      ...row,
-      [key]: value
-    } : row));
+    setLocalRows(prev => {
+      // 新しい配列を生成
+      return prev.map(row => {
+        if (row.detail_id === detailId) {
+          // 一致する行を見つけたら、新しいオブジェクトとしてコピーを作成
+          // これにより、Reactが「ステートが変わった」と認識します
+          return {
+            ...row,
+            [key]: value
+          };
+        }
+        return row;
+      });
+    });
   };
 
   // 変更を一括保存（簡略化のためループで処理）
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // 実際には変更があった行だけを抽出して送るのが効率的です
-      for (const row of localRows) {
-        await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_3___default()({
-          path: `/itmar/v1/slot-details/${row.detail_id}`,
-          method: "PUT",
-          data: {
+      // 1. オリジナルの rows と比較して、変更があったものだけを抽出
+      const diff = localRows.filter(localRow => {
+        const original = rows.find(r => {
+          return r.detail_id === localRow.detail_id;
+        });
+        return original && (original.is_booked !== localRow.is_booked || original.status !== localRow.status);
+      });
+
+      //2. まとめて送信
+      await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_3___default()({
+        path: "/itmar/v1/slot-details/bulk-update",
+        method: "POST",
+        data: {
+          updates: diff.map(row => ({
+            id: row.detail_id,
             is_booked: row.is_booked,
             status: row.status
-          }
-        });
-      }
-      alert((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Saved successfully.", "itmaroon-booking-block"));
-      onClose();
+          }))
+        }
+      });
+      alert(`${diff.length} ` + (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("items saved successfully.", "itmaroon-booking-block"));
+      // 【重要】親に通知
+      if (onSaveSuccess) onSaveSuccess();
+      onClose(); // 成功したら閉じる
     } catch (e) {
       alert((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Save failed.", "itmaroon-booking-block"));
     } finally {
       setIsSaving(false);
     }
   };
+
+  // slot_detail丸ごと削除
+
+  const handleDeleteDay = async () => {
+    // ユーザーに確認を求める（誤操作防止）
+    if (!window.confirm((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Are you sure you want to delete all slots for this day? This will make it a closed day.", "itmaroon-booking-block"))) {
+      return;
+    }
+    setIsSaving(true);
+    try {
+      // 全ての detail_id を抽出して削除リクエストを送る
+      const detailIds = rows.map(r => r.detail_id);
+      console.log(rows);
+      const result = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_3___default()({
+        path: "/itmar/v1/slot-details/bulk-delete",
+        // 削除専用のエンドポイント
+        method: "DELETE",
+        data: {
+          resource_id: resourceId,
+          sel_date: selDate,
+          detail_ids: detailIds
+        }
+      });
+
+      // 親コンポーネント（Edit.tsx）に通知してデータを再取得させる
+      if (onSaveSuccess) onSaveSuccess();
+      alert(`${result.deleted_count} ` + (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("items deleted successfully.", "itmaroon-booking-block"));
+    } catch (err) {
+      const error = err;
+      if (error.code === "has_bookings") {
+        // 予約がある場合の固有の処理
+        alert(error.message);
+      } else {
+        alert((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("An unexpected error occurred.", "itmaroon-booking-block"));
+      }
+    } finally {
+      setIsSaving(false);
+      onClose(); // モーダルを閉じる
+    }
+  };
   return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)(_wordpress_components__WEBPACK_IMPORTED_MODULE_1__.Modal, {
-    title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Edit Slots Detail", "itmaroon-booking-block"),
+    title: `${(0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Detailed Edit", "itmaroon-booking-block")} : ${selDate}`,
     onRequestClose: onClose,
     className: "slot-matrix-modal",
     children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("div", {
@@ -150,21 +221,25 @@ function SlotEditModal({
         className: "slot-matrix-table",
         children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("thead", {
           children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)("tr", {
-            children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("th", {
+            children: [timeLabels.length > 1 && /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("th", {
               children: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Time / Unit", "itmaroon-booking-block")
             }), units.map(unit => /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("th", {
               children: unit.name
             }, unit.id))]
           })
         }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("tbody", {
-          children: times.map(time => /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)("tr", {
-            children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("td", {
+          children: timeLabels.map(t => /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)("tr", {
+            children: [timeLabels.length > 1 && /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)("td", {
               className: "time-label",
-              children: time
+              children: [t.start, " ", /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("br", {}), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)("small", {
+                style: {
+                  opacity: 0.6
+                },
+                children: ["\u301C ", t.end]
+              })]
             }), units.map(unit => {
-              const cell = matrix[time][unit.id];
+              const cell = matrix[t.start || ""][unit.id];
               if (!cell) return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)("td", {
-                className: "empty-cell",
                 children: "-"
               }, unit.id);
               return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)("td", {
@@ -189,16 +264,26 @@ function SlotEditModal({
                 })]
               }, cell.detail_id);
             })]
-          }, time))
+          }, t.start))
         })]
       })
     }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsxs)("div", {
       className: "modal-footer",
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        marginTop: "20px"
+      },
       children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_1__.Button, {
         variant: "primary",
         onClick: handleSave,
         disabled: isSaving,
         children: isSaving ? (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Saving...", "itmaroon-booking-block") : (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Save All Changes", "itmaroon-booking-block")
+      }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_1__.Button, {
+        isDestructive: true,
+        onClick: handleDeleteDay,
+        disabled: isSaving,
+        children: isSaving ? (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Saving...", "itmaroon-booking-block") : (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Delete All Slots (Set as Closed)", "itmaroon-booking-block")
       }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_4__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_1__.Button, {
         variant: "tertiary",
         onClick: onClose,
@@ -220,9 +305,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   buildBookingListTableSource: () => (/* binding */ buildBookingListTableSource),
 /* harmony export */   buildCalendarTableSource: () => (/* binding */ buildCalendarTableSource),
+/* harmony export */   buildTimeTableSource: () => (/* binding */ buildTimeTableSource),
 /* harmony export */   renderBookingCellHtml: () => (/* binding */ renderBookingCellHtml),
 /* harmony export */   renderCancelButtonHtml: () => (/* binding */ renderCancelButtonHtml),
-/* harmony export */   renderTableFromTableSource: () => (/* binding */ renderTableFromTableSource)
+/* harmony export */   renderTableFromTableSource: () => (/* binding */ renderTableFromTableSource),
+/* harmony export */   slotInfoCalendar: () => (/* binding */ slotInfoCalendar)
 /* harmony export */ });
 /* harmony import */ var itmar_block_packages__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! itmar-block-packages */ "../../node_modules/itmar-block-packages/build/esm/DateElm.js");
 
@@ -258,6 +345,16 @@ const renderTableFromTableSource = (tableRoot, tableSource) => {
           }
         });
       }
+      //追加のスタイルを追加
+      if (cell.style) {
+        Object.entries(cell.style).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            // el.style["backgroundColor"] = "red" のような形で直接セット
+            // CSSのプロパティ名（kebab-case）でも、JSのプロパティ名（camelCase）でも動作します
+            el.style[key] = String(value);
+          }
+        });
+      }
       if (content == null) {
         // noop
       } else if (content instanceof Node) {
@@ -280,22 +377,96 @@ const renderTableFromTableSource = (tableRoot, tableSource) => {
  * calendar: [{date:number, weekday:number, holiday?:string, slotStatus?, slotCapacity?, slotId?}, ...]
  * renderCell: (dayObj, dayNum) => string|Node|any  // editorならReactNode、viewならHTML文字列
  */
+
+const slotInfoCalendar = (slots, ym, dateValues) => {
+  // 日付ごとに「時間帯別の集計」を一時保持する場所
+  // { [day]: { [time]: { avail: number, total: number } } }
+  const tempDailyStats = {};
+  (slots ?? []).forEach(row => {
+    const ymd = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_0__.normalizeDateYYYYMMDD)(row.slot_date);
+    if (!ymd.startsWith(`${ym}-`)) return;
+    const day = Number(ymd.slice(8, 10));
+    const time = `${row.start_time}～${row.end_time}`; // "09:00～10:00" など
+
+    if (!tempDailyStats[day]) tempDailyStats[day] = {};
+    if (!tempDailyStats[day][time]) tempDailyStats[day][time] = {
+      avail: 0,
+      total: 0
+    };
+
+    // その時間帯の合計を算出
+    if (row.status === "open") {
+      tempDailyStats[day][time].total += Number(row.capacity.max);
+      if (!row.is_booked) {
+        tempDailyStats[day][time].avail += Number(row.capacity.max);
+      }
+    }
+  });
+
+  // 2段階目：カレンダー表示用の判定ロジック
+  // dateValues（カレンダーの枠組み）に対してマッピング
+  const newDateValues = dateValues.map(dv => {
+    const day = Number(dv.date);
+    const timeSlots = tempDailyStats[day]; // その日の時間枠リスト
+
+    // A. データそのものがない場合 -> Closed（休業）
+    if (!timeSlots || Object.keys(timeSlots).length === 0) {
+      return {
+        ...dv,
+        slotStatus: "closed",
+        slotCapacity: 0,
+        capacityNum: 0
+      };
+    }
+    const timeKeys = Object.keys(timeSlots);
+
+    // B. 単一の時間枠のみ存在する場合 -> 数字を表示
+    if (timeKeys.length === 1) {
+      const stats = timeSlots[timeKeys[0]];
+      return {
+        ...dv,
+        slotStatus: "open",
+        // 状態を表示
+        slotCapacity: stats.avail,
+        capacityNum: stats.total
+      };
+    }
+    // C. 複数の時間枠がある場合 -> カレンダー上は数字を表示しない（空文字や特定の記号）
+    return {
+      ...dv,
+      slotStatus: "mixed",
+      // 内部的な判定用
+      slotCapacity: null,
+      // renderBookingCellHtml で null なら非表示にする
+      capacityNum: null
+    };
+  });
+  return {
+    dataVal: newDateValues,
+    dailyStats: tempDailyStats
+  };
+};
 const buildCalendarTableSource = (selectedMonth, calendar, {
   isMonday = false,
   headerFormatter = w => w.charAt(0).toUpperCase() + w.slice(1),
-  renderCell
+  renderCell,
+  renderStyle
 }) => {
   if (!selectedMonth || !Array.isArray(calendar) || calendar.length === 0) return [];
+  //selectedMonthから年、月、最終日を取り出す
   const {
     year,
     month,
     lastDay
   } = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_0__.getMonthRangeYmd)(selectedMonth);
   if (!year || !month || !lastDay) return [];
+  //その年月の初日の曜日を割り出す
   const firstDayOfMonth = new Date(year, month - 1, 1).getDay(); // 0..6
-
+  //カレンダーのグリッドを作る
   const areasStr = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_0__.generateGridAreas)(firstDayOfMonth, lastDay, isMonday);
   const lines = areasStr.split("\n").map(l => l.replace(/"/g, "").trim()).filter(Boolean);
+
+  //最初の行は予備の行にする
   const headerTokens = (lines[0] || "").split(/\s+/);
   let weekLines = lines.slice(1);
 
@@ -308,11 +479,11 @@ const buildCalendarTableSource = (selectedMonth, calendar, {
   const dayMap = new Map(calendar.map(d => [Number(d.date), d]));
   const tableSource = [];
 
-  // header row
+  // header row(曜日の表示)
   tableSource.push({
     cells: headerTokens.map(w => ({
       tag: "th",
-      content: headerFormatter(w)
+      content: headerFormatter(w) //最初の文字を大文字にするフォーマット
     }))
   });
 
@@ -332,21 +503,62 @@ const buildCalendarTableSource = (selectedMonth, calendar, {
           date: dayNum,
           weekday: "" // DayObjectで必須なら空文字等で初期化
         };
+        //その日の空き具合による背景色の設定
+        const cellBackground = dayObj.slotStatus === "closed" ? renderStyle.close_bg : dayObj.slotCapacity === 0 ? renderStyle.empty_bg : Number(dayObj.slotCapacity) / Number(dayObj.capacityNum) < renderStyle.enoughBorder / 100 ? renderStyle.low_bg : renderStyle.enough_bg;
+        //カーソルの設定
+        const cursorDisp = dayObj.slotStatus === "closed" ? "default" : "pointer";
         return {
           tag: "td",
           // string ではなく "td" 型として明示
-          content: renderCell(dayObj, dayNum),
+          content: renderCell(dayObj, dayNum, renderStyle),
+          style: {
+            background: cellBackground,
+            cursor: cursorDisp
+          },
           // ✅ ここに data 属性用のオブジェクトを追加
           attributes: {
             "data-date": dayObj.date,
-            "data-slot-id": dayObj.slotId || "",
-            "data-capacity": dayObj.slotCapacity || 0,
-            "data-status": dayObj.slotStatus || ""
+            "data-slotStatus": dayObj.slotStatus || ""
           }
         };
       })
     });
   }
+  return tableSource;
+};
+const buildTimeTableSource = (dailyStats, renderStyle) => {
+  const tableSource = [];
+
+  // 時間（Key）を昇順に並べてループを回す
+  const sortedTimes = Object.keys(dailyStats).sort();
+  sortedTimes.forEach(time => {
+    const stats = dailyStats[time];
+
+    //その日の空き具合による背景色の設定
+    const cellBackground = stats.avail === 0 ? renderStyle.empty_bg : Number(stats.avail) / Number(stats.total) < renderStyle.enoughBorder / 100 ? renderStyle.low_bg : renderStyle.enough_bg;
+    //空き状況記号
+    const remaindMark = stats.avail === 0 ? "✕" : Number(stats.avail) / Number(stats.total) < renderStyle.enoughBorder / 100 ? "△" : "〇";
+    const renderContent = renderStyle.remainDisp === "number" ? `remain: ${stats.avail}` : remaindMark;
+    const cursorDisp = !stats.avail ? "default" : "pointer";
+    tableSource.push({
+      cells: [{
+        tag: "td",
+        content: time
+      }, {
+        tag: "td",
+        content: renderContent,
+        style: {
+          background: cellBackground,
+          textAlign: "center",
+          cursor: cursorDisp
+        },
+        attributes: {
+          "data-time": time,
+          "data-avail": stats.avail
+        }
+      }]
+    });
+  });
   return tableSource;
 };
 const buildBookingListTableSource = (bookings, {
@@ -391,19 +603,23 @@ const buildBookingListTableSource = (bookings, {
   return tableSource;
 };
 const escapeHtml = s => String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
-const renderBookingCellHtml = (dayObj, dayNum) => {
-  const status = dayObj?.slotStatus ? escapeHtml(dayObj.slotStatus) : "";
-  const cap = Number.isFinite(Number(dayObj?.slotCapacity)) ? Number(dayObj.slotCapacity) : 0;
+const renderBookingCellHtml = (dayObj, dayNum, renderStyle) => {
+  const status = dayObj?.slotStatus || "";
+  // null の場合は空文字、数字がある場合はそのまま表示
+  const capDisplay = dayObj.slotCapacity !== null && dayObj.slotCapacity !== undefined ? `remain: ${dayObj.slotCapacity} ` : "";
+  //空き状況記号
+  const remaindMark = dayObj.slotCapacity === 0 ? "✕" : Number(dayObj.slotCapacity) / Number(dayObj.capacityNum) < renderStyle.enoughBorder / 100 ? "△" : dayObj.slotCapacity !== null && dayObj.slotCapacity !== undefined ? "〇" : "";
 
-  // 「holiday」文字は出さない
+  // 「holiday」文字
   const holiday = dayObj?.holiday && dayObj.holiday !== "holiday" ? escapeHtml(dayObj.holiday) : "";
   return `
-		<div style="line-height:1.3;">
-			<div style="font-weight:600;">${dayNum}</div>
-			${status ? `<div style="font-size:12px;opacity:0.9;">Status: ${status}</div>` : ""}
-			<div style="font-size:12px;opacity:0.9;">Cap: ${cap}</div>
-			${holiday ? `<div style="font-size:12px;opacity:0.9;">★ ${holiday}</div>` : ""}
-		</div>
+		<div style="line-height:1.3; min-height: 50px;">
+            <div style="font-weight:600;">${dayNum}</div>
+			${renderStyle.isDispHoliday ? `<div style="font-size:11px; opacity:0.8;">${holiday}</div>` : ""}
+            ${status === "closed" ? `<div style="color:red; font-size:10px;">${renderStyle.restDisp}</div>` : ""}
+            ${renderStyle.remainDisp === "number" && status != "closed" ? `<div style="font-size:11px; opacity:0.8;">${capDisplay}</div>` : ""}
+			${renderStyle.remainDisp === "sign" && status != "closed" ? `<div style="font-size:14px;text-align: center;padding-top:3px">${remaindMark}</div>` : ""}
+        </div>
 	`.trim();
 };
 const renderCancelButtonHtml = booking => {
@@ -492,7 +708,8 @@ function Edit(props) {
   const {
     attributes,
     setAttributes,
-    clientId
+    clientId,
+    isSelected
   } = props;
   const {
     resourceId,
@@ -501,14 +718,27 @@ function Edit(props) {
     selectedRest,
     calendarTableId,
     bookingTableId,
-    capacityDefault,
+    timeTableId,
     closedWeekdays,
-    confirmThings
+    confirmThings,
+    isHoliday,
+    enoughBorder,
+    enoughBgColor,
+    enoughGradient,
+    lowBgColor,
+    lowGradient,
+    emptyBgColor,
+    emptyGradient,
+    closeBgColor,
+    closeGradient,
+    remainDisp,
+    restDisp
   } = attributes;
 
   // dispatch関数を取得
   const {
-    updateBlockAttributes
+    updateBlockAttributes,
+    selectBlock
   } = (0,_wordpress_data__WEBPACK_IMPORTED_MODULE_4__.useDispatch)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.store.name);
   //インナーブロックのひな型を用意
   const TEMPLATE = [];
@@ -534,12 +764,14 @@ function Edit(props) {
     // 2. 各ブロックを探索
     const calendarBlock = allBlocks.find(b => b.name === "itmar/design-calender");
     const calendarTable = allBlocks.find(b => b.name === "itmar/design-table" && b.attributes?.defineID === calendarTableId);
+    const timeTable = allBlocks.find(b => b.name === "itmar/design-table" && b.attributes?.defineID === timeTableId);
     const reservatedTable = allBlocks.find(b => b.name === "itmar/design-table" && b.attributes?.defineID === bookingTableId);
     const displayTables = allBlocks.filter(b => b.name === "itmar/design-table");
     return {
       innerBlocksData: {
         calendarFromInner: calendarBlock || null,
         tableFromInner: calendarTable || null,
+        timeFromInner: timeTable || null,
         reservatedInner: reservatedTable || null,
         displayTables: displayTables || null
       }
@@ -550,24 +782,38 @@ function Edit(props) {
   const {
     calendarFromInner,
     tableFromInner,
+    timeFromInner,
     reservatedInner,
     displayTables
   } = innerBlocksData;
+
+  //カレンダーテーブルで選択された年月日
   const selectedDateYmd = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => {
     return (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_7__.toYmdFromMonthAndDay)(calendarFromInner?.attributes?.selectedMonth, calendarFromInner?.attributes?.selectedValue);
   }, [calendarFromInner?.attributes?.selectedMonth, calendarFromInner?.attributes?.selectedValue]);
 
+  //枠を作る日付を生成
+  const pad2 = n => String(n).padStart(2, "0");
+
   // 週休日のセット
   const closedSet = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => new Set(closedWeekdays ?? []), [closedWeekdays]);
+  const datesToCreate = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => {
+    const selectedMonth = calendarFromInner?.attributes?.selectedMonth; // "YYYY/MM"
+    if (!selectedMonth) return [];
+    const [yStr, mStr] = String(selectedMonth).split("/");
+    const year = Number(yStr);
+    const month = Number(mStr);
+    if (!year || !month) return [];
+    return (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_7__.generateMonthCalendar)(selectedMonth).filter(d => !closedSet.has(Number(d.weekday))).map(d => `${year}-${pad2(month)}-${pad2(Number(d.date))}`); // "YYYY-MM-DD"
+  }, [calendarFromInner?.attributes?.selectedMonth, closedSet]);
 
-  // ===== 日別編集UIの状態 =====
+  // =====状態変数 =====
+  const [isInitialized, setIsInitialized] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(false); // 初期化完了フラグ
+
+  const [lastUpdated, setLastUpdated] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(Date.now()); // 保存が成功するたびに更新するカウンター
   const [dayLoading, setDayLoading] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(false);
   const [dayError, setDayError] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)("");
-  const [daySlotId, setDaySlotId] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(0);
-  const [dayCapacity, setDayCapacity] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(0);
-  const [dayStatus, setDayStatus] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)("open");
   const [slotRows, setSlotRows] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)([]);
-  const [daySaving, setDaySaving] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(false);
   const [dayNotice, setDayNotice] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)({
     status: undefined,
     message: ""
@@ -599,11 +845,40 @@ function Edit(props) {
     startTime: "00:00",
     endTime: "00:00"
   });
-  const [spanList, setSpanList] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)([]); // 保存済みユニットのリスト
   const [travel, setTravel] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(60);
 
   //スロット編集Modal表示フラグ
   const [isModalOpen, setIsModalOpen] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(false);
+
+  // 日付ごとの詳細データを保持するステート
+  const [dailyStatsMap, setDailyStatsMap] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)({});
+
+  //各ブロックの初期化
+  (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
+    if (!isInitialized && calendarFromInner && timeFromInner && tableFromInner) {
+      // 命令を出す（ここでのawaitは、あくまで命令の送信完了まで）
+      updateBlockAttributes(calendarFromInner.clientId, {
+        selectedValue: 0
+      });
+      updateBlockAttributes(timeFromInner.clientId, {
+        tableSource: []
+      });
+      updateBlockAttributes(tableFromInner.clientId, {
+        clickCellPos: {}
+      });
+    }
+  }, [isInitialized, calendarFromInner?.clientId, timeFromInner?.clientId, tableFromInner?.clientId]);
+  (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
+    // すべての値が「初期値」に戻ったことを確認できたら、初めて準備完了とする
+    const isReset = calendarFromInner?.attributes?.selectedValue === 0 && timeFromInner?.attributes?.tableSource?.length === 0 && Object.keys(tableFromInner?.attributes?.clickCellPos || {}).length === 0;
+    if (isReset && !isInitialized) {
+      setIsInitialized(true);
+    }
+  }, [calendarFromInner?.attributes?.selectedValue, timeFromInner?.attributes?.tableSource, tableFromInner?.attributes?.clickCellPos]);
+  //選択月が変ったら一旦初期化
+  (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
+    setIsInitialized(false);
+  }, [calendarFromInner?.attributes?.selectedMonth]);
 
   // 選択日 or resourceId が変わったら、その日の slot を DB から取得
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
@@ -613,12 +888,9 @@ function Edit(props) {
         status: undefined,
         message: ""
       });
-      setDaySlotId(0);
 
-      // 条件が揃わないならフォーム初期化だけ
+      // 条件が揃わないなら終了
       if (!resourceId || !selectedDateYmd) {
-        setDayCapacity(Number(capacityDefault || 0));
-        setDayStatus("open");
         return;
       }
       setDayLoading(true);
@@ -627,6 +899,7 @@ function Edit(props) {
         const rows = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_5___default()({
           path
         });
+
         //データベースから取ってきたデータをステータスにセット
         setSlotRows(rows);
       } catch (e) {
@@ -638,95 +911,23 @@ function Edit(props) {
     };
     fetchDaySlot();
   }, [resourceId, selectedDateYmd, monthNotice]);
-  const saveSelectedDay = async () => {
-    setDayNotice({
-      status: undefined,
-      message: ""
-    });
-    setDayError("");
-    if (!resourceId) {
-      setDayNotice({
-        status: "error",
-        message: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Resource is not selected.", "itmaroon-booking-block")
-      });
-      return;
-    }
-    if (!selectedDateYmd) {
-      setDayNotice({
-        status: "error",
-        message: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("No date selected on calendar.", "itmaroon-booking-block")
-      });
-      return;
-    }
-    setDaySaving(true);
-    try {
-      const payload = {
-        id: daySlotId ? Number(daySlotId) : 0,
-        resource_id: Number(resourceId),
-        slot_date: selectedDateYmd,
-        capacity_total: Number(dayCapacity || 0),
-        status: dayStatus
-      };
-      const saved = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_5___default()({
-        path: "/itmar/v1/slots",
-        method: "POST",
-        data: payload
-      });
-      setDaySlotId(Number(saved.id));
-      setDayCapacity(Number(saved.capacity_total));
-      setDayStatus(saved.status || "open");
-      setDayNotice({
-        status: "success",
-        message: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Saved.", "itmaroon-booking-block")
-      });
-    } catch (e) {
-      const error = e;
-      setDayNotice({
-        status: "error",
-        message: error?.message ?? (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Save failed.", "itmaroon-booking-block")
-      });
-    } finally {
-      setDaySaving(false);
-    }
-  };
 
-  //トグルボタンのイベントドリブン
-  const onToggleClosed = dow => {
-    const cur = Array.isArray(closedWeekdays) ? closedWeekdays : [];
-    if (cur.includes(dow)) {
-      setAttributes({
-        closedWeekdays: cur.filter(x => x !== dow)
-      });
-    } else {
-      setAttributes({
-        closedWeekdays: [...cur, dow].sort((a, b) => a - b)
-      });
-    }
-  };
-  //枠を作る日付を生成
-  const pad2 = n => String(n).padStart(2, "0");
-  const datesToCreate = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => {
-    const selectedMonth = calendarFromInner?.attributes?.selectedMonth; // "YYYY/MM"
-    if (!selectedMonth) return [];
-    const [yStr, mStr] = String(selectedMonth).split("/");
-    const year = Number(yStr);
-    const month = Number(mStr);
-    if (!year || !month) return [];
-    return (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_7__.generateMonthCalendar)(selectedMonth).filter(d => !closedSet.has(Number(d.weekday))).map(d => `${year}-${pad2(month)}-${pad2(Number(d.date))}`); // "YYYY-MM-DD"
-  }, [calendarFromInner?.attributes?.selectedMonth, closedSet]);
-
-  //枠のデータをカスタムテーブルから取得
-  // dateValuesの変化を検知するための軽い署名（必要な要素だけ）
-  const dateValuesSig = arr => JSON.stringify((arr || []).map(d => [d.date, d.weekday, d.holiday || ""]));
-
-  // tableSourceの変化検知（必要ならもっと軽くしてOK）
-  const tableSig = arr => JSON.stringify(arr || []);
-
-  // ★ コンポーネント外に置かず、Edit 内で useRef で保持
-  const requestSeqRef = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useRef)(0);
+  //slotRows(選択された日付に対応するスロット)が変化したとき
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
-    //日単位更新フラグも、月単位更新フラグもオン状態なら処理しない。
-    if (daySaving && monthSaving) return;
+    // 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
+    if (!isInitialized) return;
+    const selDay = calendarFromInner?.attributes?.selectedValue;
+
+    //その日のスロットデータなければ終了
+    if (!dailyStatsMap[selDay]) return;
+    //スロット編集用モーダルの表示
+    setIsModalOpen(true);
+  }, [slotRows]);
+
+  //カレンダーテーブルのレンダリング
+  (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
+    // 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
+    if (!isInitialized) return;
     const runSlotDataGet = async () => {
       if (!calendarFromInner) return;
       if (!tableFromInner) return;
@@ -744,42 +945,34 @@ function Edit(props) {
         ym
       } = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_7__.getMonthRangeYmd)(selectedMonth);
       if (!from || !to) return;
-      const path = `/itmar/v1/slots?resource_id=${encodeURIComponent(resourceId)}` + `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-      const data = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_5___default()({
-        path
+      const slotPath = `/itmar/v1/slots?resource_id=${encodeURIComponent(resourceId)}` + `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      const slots = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_5___default()({
+        path: slotPath
       });
 
       // 途中で月が切り替わっていたら破棄
       if (mySeq !== requestSeqRef.current) return;
-      const mapByDay = new Map();
-      (data ?? []).forEach(row => {
-        const ymd = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_7__.normalizeDateYYYYMMDD)(row.slot_date);
-        if (!ymd.startsWith(`${ym}-`)) return;
-        const day = Number(ymd.slice(8, 10));
-        mapByDay.set(day, {
-          id: Number(row.id),
-          status: row.status ?? "open",
-          capacity: Number(row.capacity_total)
-        });
-      });
-      const newDateValues = dateValues.map(dv => {
-        const day = Number(dv.date);
-        const hit = mapByDay.get(day);
-        return hit ? {
-          ...dv,
-          slotId: hit.id,
-          slotStatus: hit.status,
-          slotCapacity: hit.capacity
-        } : {
-          ...dv,
-          slotId: 0,
-          slotStatus: null,
-          slotCapacity: null
-        };
-      });
-      const booking_data = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_9__.buildCalendarTableSource)(calendarFromInner?.attributes?.selectedMonth, newDateValues, {
+
+      //カレンダーテーブルレンダリング用のデータを生成
+      const calendarInfoObj = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_9__.slotInfoCalendar)(slots, ym, dateValues);
+
+      //日毎の詳細を保存
+      setDailyStatsMap(calendarInfoObj.dailyStats);
+
+      //テーブル表示用のソースを生成
+      const booking_data = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_9__.buildCalendarTableSource)(calendarFromInner?.attributes?.selectedMonth, calendarInfoObj.dataVal, {
         isMonday: false,
-        renderCell: _createTableSource__WEBPACK_IMPORTED_MODULE_9__.renderBookingCellHtml
+        renderCell: _createTableSource__WEBPACK_IMPORTED_MODULE_9__.renderBookingCellHtml,
+        renderStyle: {
+          isDispHoliday: isHoliday,
+          enoughBorder: enoughBorder,
+          enough_bg: enoughBgColor || enoughGradient,
+          low_bg: lowBgColor || lowGradient,
+          empty_bg: emptyBgColor || emptyGradient,
+          close_bg: closeBgColor || closeGradient,
+          remainDisp: remainDisp,
+          restDisp: restDisp
+        }
       });
 
       // ★ 変化があるときだけ tableSource 更新（無限更新防止）
@@ -794,9 +987,40 @@ function Edit(props) {
 
     // エラーは握りつぶさずログ（必要なら Notice 表示に変更）
     runSlotDataGet().catch(e => console.error("sync slots -> calendar dateValues failed:", e));
-  }, [calendarFromInner?.clientId, resourceId, daySaving, monthSaving,
-  //calendarFromInner?.attributes?.selectedMonth,
-  (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => dateValuesSig(calendarFromInner?.attributes?.dateValues), [calendarFromInner?.attributes?.dateValues]), tableFromInner?.clientId, reservatedInner?.clientId]);
+  }, [isInitialized, calendarFromInner?.clientId, resourceId, tableFromInner?.clientId, reservatedInner?.clientId, lastUpdated, isHoliday, enoughBorder, enoughBgColor, enoughGradient, lowBgColor, lowGradient, emptyBgColor, emptyGradient, closeBgColor, closeGradient, remainDisp, restDisp]);
+
+  //時間別のテーブルレンダリング
+  (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
+    // 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
+    if (!isInitialized) return;
+    const selDay = calendarFromInner?.attributes?.selectedValue;
+
+    //時間別集計未了の場合はテーブルをクリア
+    if (!dailyStatsMap[selDay] || Object.keys(dailyStatsMap).length === 0 || selDay === 0) {
+      updateBlockAttributes(timeFromInner?.clientId, {
+        tableLayout: "fixed",
+        tableSource: []
+      });
+      return;
+    }
+
+    //時間別のテーブルを更新
+    const renderStyle = {
+      isDispHoliday: isHoliday,
+      enoughBorder: enoughBorder,
+      enough_bg: enoughBgColor || enoughGradient,
+      low_bg: lowBgColor || lowGradient,
+      empty_bg: emptyBgColor || emptyGradient,
+      close_bg: closeBgColor || closeGradient,
+      remainDisp: remainDisp,
+      restDisp: restDisp
+    };
+    const timetableSource = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_9__.buildTimeTableSource)(dailyStatsMap[selDay], renderStyle);
+    updateBlockAttributes(timeFromInner?.clientId, {
+      tableLayout: "fixed",
+      tableSource: timetableSource
+    });
+  }, [isInitialized, dailyStatsMap, calendarFromInner?.attributes?.selectedValue]);
 
   //予約済みデータの表示
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
@@ -830,6 +1054,9 @@ function Edit(props) {
 
   //予定表上のテーブルをクリックしたときの処理
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
+    // 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
+    if (!isInitialized) return;
+
     //選択した月
     const selectedMonth = calendarFromInner?.attributes?.selectedMonth;
     //１日の位置を計算
@@ -843,7 +1070,7 @@ function Edit(props) {
     // 子ブロックから取得したクリック位置
     const row = tableFromInner?.attributes?.clickCellPos?.row;
     const col = tableFromInner?.attributes?.clickCellPos?.col;
-    if (!row || !col) return;
+    //if (!row || !col) return;
 
     // 通し番号（セル番号）を計算
     const cellIndex = (row - 1) * 7 + col;
@@ -854,17 +1081,19 @@ function Edit(props) {
 
     // 4. 有効な日付範囲内かチェック
     if (day >= 1 && day <= lastDay) {
-      //カレンダーコントロールの属性を変更
+      //カレンダーコントロールの属性（選択日付）を変更
       updateBlockAttributes(calendarFromInner?.clientId, {
         selectedValue: day
       });
-      //スロット編集用モーダルの表示
-      setIsModalOpen(true);
+
+      //ブロックを選択状態にする
+      if (!isSelected) {
+        selectBlock(clientId);
+      }
     }
-  }, [calendarFromInner?.attributes?.selectedMonth, tableFromInner?.attributes?.clickCellPos]);
+  }, [isInitialized, calendarFromInner?.attributes?.selectedMonth, tableFromInner?.attributes?.clickCellPos]);
 
   //一月分の枠を一括で登録
-
   const addMonthSlots = async () => {
     setMonthNotice({
       status: undefined,
@@ -945,8 +1174,10 @@ function Edit(props) {
       const newUnits = [];
       //同じ種類の席数を一括で入力
       for (let i = 0; i < addNum; i++) {
+        // 3桁で0埋めする（例: 1 -> 001, 12 -> 012）
+        const unitNumber = (newUnits.length + 1).toString().padStart(3, "0");
         newUnits.push({
-          name: `${currentUnit.name} ${newUnits.length + 1}`,
+          name: `${currentUnit.name} ${unitNumber}`,
           min: currentUnit.min,
           max: currentUnit.max
           // quantity は持たせず、1レコード 1ユニットとして扱う
@@ -1029,6 +1260,26 @@ function Edit(props) {
     }
   };
 
+  //トグルボタンのイベントドリブン
+  const onToggleClosed = dow => {
+    const cur = Array.isArray(closedWeekdays) ? closedWeekdays : [];
+    if (cur.includes(dow)) {
+      setAttributes({
+        closedWeekdays: cur.filter(x => x !== dow)
+      });
+    } else {
+      setAttributes({
+        closedWeekdays: [...cur, dow].sort((a, b) => a - b)
+      });
+    }
+  };
+
+  // tableSourceの変化検知（必要ならもっと軽くしてOK）
+  const tableSig = arr => JSON.stringify(arr || []);
+
+  // ★ コンポーネント外に置かず、Edit 内で useRef で保持
+  const requestSeqRef = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useRef)(0);
+
   //テーブルのIdentification ID
   const tableOptions = displayTables?.map(table => ({
     label: table.attributes.defineID || "No ID",
@@ -1039,10 +1290,12 @@ function Edit(props) {
   // unitList から SelectControl 用の options を作成
   const unitOptions = [{
     value: "",
-    label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Select a unit to delete", "itmaroon-booking-block")
-  }, ...unitList.map(unit => ({
+    label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Select a unit to delete or edit", "itmaroon-booking-block")
+  },
+  // unitListをコピーしてソートしてからmapに繋げます
+  ...[...unitList].sort((a, b) => a.name.localeCompare(b.name, "ja")) // 日本語の昇順（あいうえお順）
+  .map(unit => ({
     value: unit.id?.toString() || "",
-    // IDを文字列にする必要があります
     label: `${unit.name} (${unit.min}-${unit.max}名)`
   }))];
   return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.Fragment, {
@@ -1057,6 +1310,15 @@ function Edit(props) {
           onChange: val => {
             setAttributes({
               calendarTableId: val
+            });
+          }
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+          label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("TaimTable Identification", "itmaroon-booking-block"),
+          value: timeTableId,
+          options: tableOptions,
+          onChange: val => {
+            setAttributes({
+              timeTableId: val
             });
           }
         }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
@@ -1293,9 +1555,115 @@ function Edit(props) {
           children: [(0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Dates to be created:", "itmaroon-booking-block"), " ", datesToCreate.length]
         })]
       }), isModalOpen && /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_SlotEditModal__WEBPACK_IMPORTED_MODULE_10__["default"], {
+        resourceId: resourceId,
+        selDate: selectedDateYmd || "",
         rows: slotRows,
-        onClose: () => setIsModalOpen(false)
+        onClose: () => setIsModalOpen(false),
+        onSaveSuccess: () => setLastUpdated(Date.now()) // 保存成功時に現在時刻をセット
       })]
+    }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.InspectorControls, {
+      group: "styles",
+      children: /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.PanelBody, {
+        title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Calendar settings", "itmaroon-booking-block"),
+        initialOpen: true,
+        className: "check_design_ctrl",
+        children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.ToggleControl, {
+          label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Show Holiday", "itmaroon-booking-block"),
+          checked: isHoliday,
+          onChange: newValue => setAttributes({
+            isHoliday: newValue
+          })
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.RangeControl, {
+          value: enoughBorder,
+          label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Enough Border", "itmaroon-booking-block"),
+          max: 100,
+          min: 10,
+          step: 10,
+          onChange: val => setAttributes({
+            enoughBorder: val
+          })
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.__experimentalPanelColorGradientSettings, {
+          title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Choose Enough Remaind Cell", "itmaroon-booking-block"),
+          settings: [{
+            colorValue: enoughBgColor,
+            gradientValue: emptyGradient,
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Background color", "itmaroon-booking-block"),
+            onColorChange: newValue => {
+              setAttributes({
+                enoughBgColor: newValue
+              });
+            },
+            onGradientChange: newValue => {
+              setAttributes({
+                emptyGradient: newValue
+              });
+            }
+          }]
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.__experimentalPanelColorGradientSettings, {
+          title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Choose Low Remaind Cell", "itmaroon-booking-block"),
+          settings: [{
+            colorValue: lowBgColor,
+            gradientValue: lowGradient,
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Background color", "itmaroon-booking-block"),
+            onColorChange: newValue => setAttributes({
+              lowBgColor: newValue
+            }),
+            onGradientChange: newValue => setAttributes({
+              lowGradient: newValue
+            })
+          }]
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.__experimentalPanelColorGradientSettings, {
+          title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Choose Empty Cell", "itmaroon-booking-block"),
+          settings: [{
+            colorValue: emptyBgColor,
+            gradientValue: emptyGradient,
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Background color", "itmaroon-booking-block"),
+            onColorChange: newValue => setAttributes({
+              emptyBgColor: newValue
+            }),
+            onGradientChange: newValue => setAttributes({
+              emptyGradient: newValue
+            })
+          }]
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.__experimentalPanelColorGradientSettings, {
+          title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Choose Close Cell", "itmaroon-booking-block"),
+          settings: [{
+            colorValue: closeBgColor,
+            gradientValue: closeGradient,
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Background color", "itmaroon-booking-block"),
+            onColorChange: newValue => setAttributes({
+              closeBgColor: newValue
+            }),
+            onGradientChange: newValue => setAttributes({
+              closeGradient: newValue
+            })
+          }]
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.RadioControl, {
+          label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Remaind Display type", "itmaroon-booking-block"),
+          selected: remainDisp,
+          options: [{
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Number Display", "itmaroon-booking-block"),
+            value: "number"
+          }, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Sign", "itmaroon-booking-block"),
+            value: "sign"
+          }],
+          onChange: changeOption => {
+            setAttributes({
+              remainDisp: changeOption
+            });
+          },
+          help: remainDisp === "number" ? (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("The remaining number of available reservations will be displayed as a number.", "block-collections") : remainDisp === "sign" ? (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("The remaining number of available reservations will be displayed as ○✕△.", "block-collections") : ""
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+          label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Rest Display", "itmaroon-booking-block"),
+          value: restDisp,
+          onChange: val => {
+            setAttributes({
+              restDisp: val
+            });
+          }
+        })]
+      })
     }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)("div", {
       ...innerBlocksProps
     })]
@@ -1365,15 +1733,8 @@ __webpack_require__.r(__webpack_exports__);
 function save({
   attributes
 }) {
-  const {
-    resourceId,
-    calendarTableId,
-    bookingTableId
-  } = attributes;
   const blockProps = _wordpress_block_editor__WEBPACK_IMPORTED_MODULE_0__.useBlockProps.save({
-    "data-resource-id": resourceId,
-    "data-calendar-table-id": calendarTableId,
-    "data-booking-table-id": bookingTableId
+    "data-attributes": JSON.stringify(attributes)
   });
   return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_1__.jsx)("div", {
     ...blockProps,
@@ -2454,7 +2815,7 @@ let nanoid = (size = 21) => {
   \*************************************************/
 (module) {
 
-module.exports = /*#__PURE__*/JSON.parse('{"$schema":"https://schemas.wp.org/trunk/block.json","apiVersion":3,"name":"itmar/reservation-block","version":"0.1.0","title":"RESERVATION BLOCK","category":"widgets","supports":{"html":false},"attributes":{"resourceId":{"type":"number","default":0},"resourceSlug":{"type":"string","default":""},"resourceRest":{"type":"string","default":""},"selectedSlug":{"type":"string","default":""},"selectedRest":{"type":"string","default":""},"calendarTableId":{"type":"string","default":""},"bookingTableId":{"type":"string","default":""},"capacityDefault":{"type":"number","default":1},"closedWeekdays":{"type":"array","default":[]},"confirmThings":{"type":"array","default":[]},"lastClickedCell":{"type":"object","default":null}},"textdomain":"itmaroon-booking-block","editorScript":"file:./index.js","editorStyle":"file:./index.css","style":"file:./style-index.css","viewScript":"file:./view.js"}');
+module.exports = /*#__PURE__*/JSON.parse('{"$schema":"https://schemas.wp.org/trunk/block.json","apiVersion":3,"name":"itmar/reservation-block","version":"0.1.0","title":"RESERVATION BLOCK","category":"widgets","supports":{"html":false},"attributes":{"resourceId":{"type":"number","default":0},"resourceSlug":{"type":"string","default":""},"resourceRest":{"type":"string","default":""},"selectedSlug":{"type":"string","default":""},"selectedRest":{"type":"string","default":""},"calendarTableId":{"type":"string","default":""},"timeTableId":{"type":"string","default":""},"bookingTableId":{"type":"string","default":""},"capacityDefault":{"type":"number","default":1},"closedWeekdays":{"type":"array","default":[]},"isHoliday":{"type":"boolean","default":false},"enoughBorder":{"type":"number","default":30},"enoughBgColor":{"type":"string"},"enoughGradient":{"type":"string"},"lowBgColor":{"type":"string"},"lowGradient":{"type":"string"},"emptyBgColor":{"type":"string"},"emptyGradient":{"type":"string"},"closeBgColor":{"type":"string"},"closeGradient":{"type":"string"},"remainDisp":{"type":"string","default":"number"},"restDisp":{"type":"string","default":"Close"},"confirmThings":{"type":"array","default":[]},"lastClickedCell":{"type":"object","default":null}},"textdomain":"itmaroon-booking-block","editorScript":"file:./index.js","editorStyle":"file:./index.css","style":"file:./style-index.css","viewScript":"file:./view.js"}');
 
 /***/ }
 

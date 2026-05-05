@@ -11,20 +11,42 @@ export interface BookingAttributes {
 	selectedRest: string;
 	calendarTableId: string;
 	bookingTableId: string;
+	timeTableId: string;
 	capacityDefault: number;
 	closedWeekdays: number[];
 	confirmThings: unknown[];
+	isHoliday: boolean;
+	enoughBorder: number;
+	enoughBgColor: string;
+	enoughGradient: string;
+	lowBgColor: string;
+	lowGradient: string;
+	emptyBgColor: string;
+	emptyGradient: string;
+	closeBgColor: string;
+	closeGradient: string;
+	remainDisp: string;
+	restDisp: string;
 }
 
 /**
  * API (itmar/v1/slots) のレスポンス型
  */
 export interface SlotRow {
-	id: number | string;
-	resource_id: number;
+	detail_id: number;
 	slot_date: string;
 	capacity_total: number | string;
-	status: "open" | "closed" | "holiday";
+	status: "open" | "closed" | "maintenance";
+	slot_id: number;
+	unit_id: number;
+	unit_name: string;
+	capacity: {
+		min: number;
+		max: number;
+	};
+	start_time: string;
+	end_time: string;
+	is_booked: boolean;
 }
 
 export interface SlotDetail {
@@ -56,11 +78,22 @@ export interface DayObject {
 	date: number | string;
 	weekday: number | string;
 	holiday?: string;
-	slotStatus?: "open" | "closed" | "holiday" | null;
+	slotStatus?: "open" | "closed" | "maintenance" | null;
 	slotCapacity?: number | string | null;
+	slotAvailable?: number | string | null;
 	slotId?: number | string;
 	[key: string]: unknown; // その他拡張用
 }
+
+// 1日分のデータ
+// キーは "09:00" などの時間文字列
+export type SlotUsing = Record<
+	string,
+	{
+		avail: number;
+		total: number;
+	}
+>;
 
 export interface cellPos {
 	row: number;
@@ -84,6 +117,9 @@ export interface InnerBlockAttributes {
 export interface TableCell {
 	tag: "th" | "td";
 	content: string | Node | null | undefined | any;
+	style?: {
+		[key: string]: string | number;
+	};
 	attributes?: {
 		[key: string]: string | number;
 	};
@@ -104,7 +140,8 @@ export type TableSource = TableRow[];
 export interface BuildCalendarOptions {
 	isMonday?: boolean;
 	headerFormatter?: (weekdayName: string) => string;
-	renderCell: (dayObj: DayObject, dayNum: number) => any;
+	renderCell: (dayObj: DayObject, dayNum: number, extra?: any) => any;
+	renderStyle?: any;
 }
 
 /**

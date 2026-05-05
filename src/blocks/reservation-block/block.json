@@ -33,6 +33,10 @@
 			"type": "string",
 			"default": ""
 		},
+		"timeTableId":{
+			"type": "string",
+			"default": ""
+		},
 		"bookingTableId":{
 			"type": "string",
 			"default": ""
@@ -45,6 +49,46 @@
 		"closedWeekdays":{
 			"type":"array",
 			"default":[]
+		},
+		"isHoliday": {
+			"type": "boolean",
+			"default": false
+		},
+		"enoughBorder":{
+			"type":"number",
+			"default":30
+		}, 
+		"enoughBgColor": {
+			"type": "string"
+		},
+		"enoughGradient": {
+			"type": "string"
+		},
+		"lowBgColor": {
+			"type": "string"
+		},
+		"lowGradient": {
+			"type": "string"
+		},
+		"emptyBgColor": {
+			"type": "string"
+		},
+		"emptyGradient": {
+			"type": "string"
+		},
+		"closeBgColor": {
+			"type": "string"
+		},
+		"closeGradient": {
+			"type": "string"
+		},
+		"remainDisp": {
+			"type": "string",
+			"default":"number"
+		},
+		"restDisp": {
+			"type": "string",
+			"default":"Close"
 		},
 		"confirmThings":{
 			"type":"array",

@@ -32,6 +32,8 @@
   text-align: center;
 }
 .slot-matrix-table th {
+  white-space: nowrap;
+  vertical-align: middle;
   background: #f0f0f0;
   position: sticky;
   top: 0;
@@ -41,6 +43,13 @@
   right: 0;
   background: #f0f0f0;
   font-weight: bold;
+  line-height: 1.2;
+  padding: 4px 8px;
+  min-width: 100px;
+}
+.slot-matrix-table .time-label small {
+  display: block;
+  font-size: 0.85em;
 }
 .slot-matrix-table .slot-cell {
   cursor: pointer;

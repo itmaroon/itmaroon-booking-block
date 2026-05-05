@@ -1,3 +1,4 @@
+import { __ } from "@wordpress/i18n";
 import apiFetch from "@wordpress/api-fetch";
 import {
 	generateMonthCalendar,
@@ -10,44 +11,10 @@ import {
 	buildBookingListTableSource,
 	renderBookingCellHtml,
 	renderCancelButtonHtml,
+	slotInfoCalendar,
+	buildTimeTableSource,
 } from "./createTableSource"; // 上で作った共通関数
-import { SlotRow, DayObject, userBooking, HolidayData } from "./types";
-
-const normalizeDateYYYYMMDD = (
-	v: string | number | undefined | null,
-): string => (v ? String(v).slice(0, 10) : "");
-
-const mapSlotsByDay = (
-	slots: SlotRow[] | undefined,
-	ym: string,
-): Map<number, Partial<DayObject>> => {
-	// Mapの型を <number, DayObjectの一部> として定義
-	const map = new Map<number, Partial<DayObject>>();
-
-	(slots || []).forEach((row) => {
-		const ymd = normalizeDateYYYYMMDD(row.slot_date);
-		if (!ymd.startsWith(`${ym}-`)) return;
-		const day = Number(ymd.slice(8, 10));
-		map.set(day, {
-			slotId: Number(row.id),
-			slotStatus: row.status || "open",
-			slotCapacity: Number(row.capacity_total),
-		});
-	});
-	return map;
-};
-
-const mergeSlotsIntoCalendar = (
-	calendar: DayObject[] | undefined,
-	slotMap: Map<number, Partial<DayObject>>,
-): DayObject[] => {
-	return (calendar || []).map((d) => {
-		const hit = slotMap.get(Number(d.date));
-		return hit
-			? { ...d, ...hit }
-			: { ...d, slotId: 0, slotStatus: null, slotCapacity: null };
-	});
-};
+import { SlotRow, DayObject, userBooking } from "./types";
 
 jQuery(function ($) {
 	// ✅ 「1つの予約ブロック」ごとに初期化したいので、親ラッパーを推奨
@@ -58,13 +25,30 @@ jQuery(function ($) {
 		const $calendar = $root.find(".wp-block-itmar-design-calender").first();
 		//テーブルブロックはすべて取得
 		const $table = $root.find(".wp-block-itmar-design-table");
-		//設定された表示用テーブルの識別ID
-		const calendarTableId = $root.data("calendar-table-id");
-		const bookingTableId = $root.data("booking-table-id");
+
+		//オブジェクトに変換
+		const rawAttributes = $root.attr("data-attributes");
+		if (!rawAttributes) {
+			return;
+		}
+		const attributes = JSON.parse(rawAttributes);
+
+		// 必要な変数に割り当て
+		// 分割代入（Destructuring）を使うと非常にスッキリします
+		const {
+			resourceRest,
+			resourceId,
+			calendarTableId,
+			timeTableId,
+			bookingTableId,
+			...renderStyle
+		} = attributes;
+
 		//テーブルブロック
 		const $calendarTable = $table.filter(
 			`[data-define_id="${calendarTableId}"]`,
 		);
+		const $timeTable = $table.filter(`[data-define_id="${timeTableId}"]`);
 		const $bookingTable = $table.filter(`[data-define_id="${bookingTableId}"]`);
 
 		//要素の存在チェック
@@ -78,25 +62,6 @@ jQuery(function ($) {
 		const schedule = () => {
 			window.clearTimeout(timer);
 			timer = window.setTimeout(refresh, 50);
-		};
-		//ResourceIdの取得
-		const getResourceIdFromRoot = ($root: JQuery): number => {
-			// まず自分（念のため）
-			let v = $root.data("resourceId");
-			if (v != null) {
-				const n = Number(v);
-				if (Number.isFinite(n) && n > 0) return n;
-			}
-
-			// 次に配下（最初に見つかったもの）
-			const $hit = $root.find("[data-resource-id]").first();
-			if ($hit.length) {
-				v = $hit.attr("data-resource-id"); // data()より確実（DOM差し替えにも強い）
-				const n = Number(v);
-				if (Number.isFinite(n) && n > 0) return n;
-			}
-
-			return 0;
 		};
 
 		// ✅ select が差し替わってもOK（イベント委譲）
@@ -129,17 +94,20 @@ jQuery(function ($) {
 			});
 		}
 
+		//日毎データを定義
+		let monthDailyObj: any = {};
+
 		async function refresh() {
 			const selectedMonth = $calendar.find(MONTH_SELECT).val() as string; // "YYYY/MM"
 			if (!selectedMonth) return;
+			//timeTableはいったん非表示
+			$timeTable.hide();
 
-			const { from, to, ym, year, month } = getMonthRangeYmd(selectedMonth);
+			const { from, to, ym } = getMonthRangeYmd(selectedMonth);
 
 			if (!from || !to) return;
 
-			// resourceId は save.js で data-resource-id を出すのが最も安定
-			const resourceId = getResourceIdFromRoot($root);
-
+			// resourceId は save.js で data-attributesを出すのが最も安定
 			if (!resourceId) return;
 
 			const mySeq = ++seq;
@@ -162,33 +130,53 @@ jQuery(function ($) {
 
 			if (mySeq !== seq) return;
 
-			const slotMap = mapSlotsByDay(slots, ym);
-			const mergedCalendar = mergeSlotsIntoCalendar(baseCalendar, slotMap);
+			//カレンダーテーブルレンダリング用のデータを生成
+			const calendarInfoObj = slotInfoCalendar(slots, ym, baseCalendar);
 
 			// ✅ 共通 buildCalendarTableSource を使用（renderCellだけview用に注入）
 			const calendarSource = buildCalendarTableSource(
 				selectedMonth,
-				mergedCalendar,
+				calendarInfoObj.dataVal as DayObject[],
 				{
 					isMonday: false,
 					renderCell: renderBookingCellHtml,
+					renderStyle: {
+						isDispHoliday: renderStyle.isHoliday,
+						enoughBorder: renderStyle.enoughBorder,
+						enough_bg: renderStyle.enoughBgColor || renderStyle.enoughGradient,
+						low_bg: renderStyle.lowBgColor || renderStyle.lowGradient,
+						empty_bg: renderStyle.emptyBgColor || renderStyle.emptyGradient,
+						close_bg: renderStyle.closeBgColor || renderStyle.closeGradient,
+						remainDisp: renderStyle.remainDisp,
+						restDisp: renderStyle.restDisp,
+					},
 				},
 			);
+			//日毎データを確保
+			monthDailyObj = calendarInfoObj.dailyStats;
 
-			const bookingPath = "/itmar/v1/get_user_bookings";
-			const bookings = await apiFetch<userBooking[]>({ path: bookingPath });
-
-			// 予約一覧用の Source を作成
-			const bookingSource = buildBookingListTableSource(bookings, {
-				renderActions: renderCancelButtonHtml,
-			});
-
-			//テーブルの再レンダリング
+			//カレンダーテーブルの再レンダリング
 			const calendarTableElement = $calendarTable[0] || null;
 			renderTableFromTableSource(calendarTableElement, calendarSource);
 
-			const bookingTableElement = $bookingTable[0] || null;
-			renderTableFromTableSource(bookingTableElement, bookingSource);
+			//予約済みテーブルの処理
+			if (itmar_option.isLoggedIn) {
+				try {
+					//予約済みデータの取得
+					const bookingPath = "/itmar/v1/get_user_bookings";
+					const bookings = await apiFetch<userBooking[]>({ path: bookingPath });
+
+					// 予約一覧用の Source を作成
+					const bookingSource = buildBookingListTableSource(bookings, {
+						renderActions: renderCancelButtonHtml,
+					});
+					//テーブルの再レンダリング
+					const bookingTableElement = $bookingTable[0] || null;
+					renderTableFromTableSource(bookingTableElement, bookingSource);
+				} catch (err: any) {
+					console.error(err.message);
+				}
+			}
 		}
 
 		//Design Titleの中味にデータ流し込むヘルパ
@@ -200,6 +188,25 @@ jQuery(function ($) {
 			if ($targetDiv.length) {
 				// テキストを流し込む
 				$targetDiv.text(formatedValue);
+			}
+		};
+
+		// リソース情報を取得する関数
+		interface WPPostResource {
+			title: {
+				rendered: string;
+			};
+			// 他にも使いたい項目があればここに追加
+		}
+		const fetchResourceTitle = async (id: number) => {
+			try {
+				// resourceId を使って投稿情報を取得
+				const post = (await apiFetch({
+					path: `/wp/v2/${resourceRest}/${id}`,
+				})) as WPPostResource;
+				return post.title.rendered;
+			} catch (error) {
+				console.error("リソース名の取得に失敗しました:", error);
 			}
 		};
 
@@ -216,10 +223,70 @@ jQuery(function ($) {
 			if (!selectedMonth) return;
 
 			const $clickedCell = $(this);
-			const selDate = `${selectedMonth}/${$clickedCell.data("date")}`;
-			const slotId = $clickedCell.data("slot-id");
-			const slotCapa = $clickedCell.data("capacity");
 
+			const selDateNum = Number($clickedCell.data("date"));
+			//その日の予定がなければ終了
+			if (!monthDailyObj[selDateNum]) return;
+
+			// 1. テーブル内のすべての td から "currentSel" クラスを一旦削除
+			$calendarTable.find("td").removeClass("currentSel");
+
+			// 2. クリックされたセル（this）だけに "currentSel" クラスを追加
+			$clickedCell.addClass("currentSel");
+
+			//時間単位の情報が複数あるなら時間テーブルを表示して終了
+			if (Object.keys(monthDailyObj[selDateNum]).length > 1) {
+				const timeStyle = {
+					isDispHoliday: renderStyle.isHoliday,
+					enoughBorder: renderStyle.enoughBorder,
+					enough_bg: renderStyle.enoughBgColor || renderStyle.enoughGradient,
+					low_bg: renderStyle.lowBgColor || renderStyle.lowGradient,
+					empty_bg: renderStyle.emptyBgColor || renderStyle.emptyGradient,
+					close_bg: renderStyle.closeBgColor || renderStyle.closeGradient,
+					remainDisp: renderStyle.remainDisp,
+				};
+
+				const timetableSource = buildTimeTableSource(
+					monthDailyObj[selDateNum],
+					timeStyle,
+				);
+
+				//テーブルの再レンダリング
+				const timeTableElement = $timeTable[0] || null;
+				renderTableFromTableSource(timeTableElement, timetableSource);
+				//timeTableを表示
+				$timeTable.show();
+				return;
+			}
+		});
+
+		// $timeTable 内のセル（td）がクリックされた時のイベント（予約登録）
+		$timeTable.on("click", "td", function () {
+			//選択された月を取得
+			const selectedMonth = $calendar.find(MONTH_SELECT).val() as string; // "YYYY/MM"
+			if (!selectedMonth) return;
+			//選択された日付
+			if (!$calendarTable.find("td.currentSel").length) return;
+			const selDay = $calendarTable.find("td.currentSel").data("date");
+			//空きがないときは終了
+			const $clickedCell = $(this);
+			if ($clickedCell.data("avail") < 1) return;
+
+			//日付文字列の生成
+			// 1. スラッシュをハイフンに置換 (2026/05 -> 2026-05)
+			const yearMonth = selectedMonth.replace(/\//g, "-");
+
+			// 2. 日付を2桁にパディング (5 -> 05)
+			const dayPadded = String(selDay).padStart(2, "0");
+
+			// 3. 結合して YYYY-MM-DD 完成
+			const formattedDate = `${yearMonth}-${dayPadded}`;
+			//モーダルを出す
+			comfirm_modal_disp(formattedDate, $clickedCell.data("time"));
+		});
+
+		//予約確認のモーダルを出す
+		const comfirm_modal_disp = async (selDate: string, timeValue: string) => {
 			//モーダル内の日付表示要素を取得
 			const $dateElm = $reservation_modal.find(
 				'[data-unique_id="reservation_date"]',
@@ -232,22 +299,42 @@ jQuery(function ($) {
 				$dateElm.data("free_format"),
 				$dateElm.data("decimal"),
 			);
-
-			enterTitle($dateElm, formatedValue);
+			if ($dateElm) {
+				enterTitle($dateElm, formatedValue);
+				$dateElm.attr("data-value", selDate);
+			}
+			//モーダル内の時間表示要素を取得
+			const $timeElm = $reservation_modal.find(
+				'[data-unique_id="reservation_time"]',
+			);
+			if ($timeElm) {
+				enterTitle($timeElm, timeValue);
+				$timeElm.attr("data-value", timeValue);
+			}
+			//リソース名を取得
+			const $resouceElm = $reservation_modal.find(
+				'[data-unique_id="resource_name"]',
+			);
+			if ($resouceElm) {
+				const resourceName = (await fetchResourceTitle(resourceId)) || "";
+				enterTitle($resouceElm, resourceName);
+			}
+			console.log(itmar_option.isLoggedIn);
+			//ログインのチェック
+			if (!itmar_option.isLoggedIn) {
+				alert("予約にはログインが必要です。");
+				// 必要ならログインページへリダイレクト
+				// window.location.href = wpApiSettings.login_url;
+				return;
+			}
 
 			if ($reservation_modal.length) {
-				//
-				$reservation_modal.data("slot-id", slotId);
-				// 人数入力の上限だけは反映させておく
-				$reservation_modal
-					.find('input[name="guest_count"]')
-					.attr("max", slotCapa);
 				// モーダルを表示（CSSで display: none になっている場合）
 				$reservation_modal.fadeIn();
 			} else {
 				console.error("モーダルが見つかりません。IDを確認してください。");
 			}
-		});
+		};
 
 		//キャンセル確認のモーダルを出す
 		const $cancel_modal = $root.find("#cancel_modal").parent().parent();
@@ -301,21 +388,34 @@ jQuery(function ($) {
 
 			const $form = $(this);
 			const $submitBtn = $form.find('button[type="submit"]');
-			const $modalElement = $form.closest($reservation_modal);
 
 			// ✅ モーダルに保存しておいた ID を取得
-			const slotId = $modalElement.data("slot-id");
+			//const slotId = $modalElement.data("slot-id");
 
-			// フォーム内の「人数」を取得
+			// フォーム内のデータを取得
 			const guestCount = $form.find('input[name="guest_count"]').val();
+			const isSameUnit = $form.find('input[name="same_table"]').val();
+			const reserveDate = $form
+				.find('[data-unique_id="reservation_date"]')
+				?.attr("data-value");
+			const reserveTime = $form
+				.find('[data-unique_id="reservation_time"]')
+				?.attr("data-value");
 
 			// 送信データを作成
 			const data = {
-				slot_id: slotId,
+				resource_id: resourceId,
 				guest_count: guestCount,
+				is_same_unit: isSameUnit,
+				reserveDate: reserveDate,
+				reserveTime: reserveTime,
 			};
+
 			// ボタンを無効化して連打防止
-			$submitBtn.prop("disabled", true).text("送信中...");
+			const keepBtnText = $submitBtn.text();
+			$submitBtn
+				.prop("disabled", true)
+				.text(__("Sending...", "itmaroon-booking-block"));
 
 			try {
 				await apiFetch({
@@ -323,7 +423,7 @@ jQuery(function ($) {
 					method: "POST",
 					data: data,
 				});
-				alert("予約が完了しました！");
+				alert(__("Reservation is complete!", "itmaroon-booking-block"));
 
 				// ✅ 予約が成功したので、カレンダーの残数を最新にするために再描画
 				if (typeof refresh === "function") {
@@ -333,14 +433,14 @@ jQuery(function ($) {
 				// error が Error オブジェクトかどうかをチェック
 				if (error instanceof Error) {
 					console.error("予約エラー:", error.message);
-					alert("予約に失敗しました: " + error.message);
+					alert(__("Reservation failed:", "itmaroon-booking-block"));
 				} else {
 					// 文字列などが投げられた場合のフォールバック
 					console.error("予期せぬエラー:", error);
-					alert("不明なエラーが発生しました");
+					alert(__("An error has occurred!", "itmaroon-booking-block"));
 				}
 			} finally {
-				$submitBtn.prop("disabled", false).text("予約を確定する");
+				$submitBtn.prop("disabled", false).text(keepBtnText);
 				$reservation_modal.fadeOut();
 			}
 		});

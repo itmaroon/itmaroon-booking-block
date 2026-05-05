@@ -11,6 +11,7 @@ if (! defined('ABSPATH')) exit;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Server;
+use WP_REST_Response;
 
 final class SlotsAPI
 {
@@ -35,7 +36,7 @@ final class SlotsAPI
             [
                 'methods'  => WP_REST_Server::READABLE,
                 'callback' => [__CLASS__, 'list_slots'],
-                'permission_callback' => [__CLASS__, 'can_manage_slots'],
+                'permission_callback' => '__return_true',
                 'args' => [
                     'resource_id' => [
                         'type' => 'integer',
@@ -131,17 +132,23 @@ final class SlotsAPI
             'permission_callback' => [__CLASS__, 'can_manage_slots'],
         ]);
 
+        register_rest_route('itmar/v1', '/slot-details/bulk-update', [
+            'methods'             => 'POST', // まとまったデータを送るのでPOST
+            'callback'            => [__CLASS__, 'handle_bulk_update_slot_details'],
+            'permission_callback' => [__CLASS__, 'can_manage_slots'],
+        ]);
+
+        register_rest_route('itmar/v1', '/slot-details/bulk-delete', [
+            'methods'             => 'DELETE',
+            'callback'            => [__CLASS__, 'handle_bulk_delete_slot_details'],
+            'permission_callback' => [__CLASS__, 'can_manage_slots'], // 管理者権限チェック
+        ]);
+
         register_rest_route('itmar/v1', '/generate-spans', [
             'methods'             => 'POST',
             'callback'            => [__CLASS__, 'handle_generate_spans'],
             'permission_callback' => [__CLASS__, 'can_manage_slots'],
         ]);
-    }
-
-    private static function table_name(): string
-    {
-        global $wpdb;
-        return $wpdb->prefix . 'itmar_reservation_slots';
     }
 
     public static function create_tables(): void
@@ -153,7 +160,7 @@ final class SlotsAPI
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
         // 1. 親：スロット（1日単位の概要）
-        $table_slots = self::table_name();
+        $table_slots = $wpdb->prefix . 'itmar_reservation_slots';
 
         // 2. 新設：リソースユニット（2名用テーブル、カウンター席などのマスタ）
         $table_units = $wpdb->prefix . 'itmar_resource_units';
@@ -173,8 +180,7 @@ final class SlotsAPI
             PRIMARY KEY  (id),
             UNIQUE KEY resource_date (resource_id, slot_date),
             KEY slot_date (slot_date),
-            KEY resource_id (resource_id),
-            KEY status (status)
+            KEY resource_id (resource_id)
         ) {$charset_collate};";
 
         // ② Resource Unitsテーブル（座席マスタ）
@@ -203,7 +209,7 @@ final class SlotsAPI
             PRIMARY KEY  (id),
             KEY slot_id (slot_id),
             KEY unit_id (unit_id),
-            KEY slot_unit_time (slot_id, unit_id, start_time)
+            UNIQUE KEY slot_unit_time (slot_id, unit_id, start_time)
         ) {$charset_collate};";
 
         // 一括実行
@@ -211,8 +217,6 @@ final class SlotsAPI
             dbDelta($sql);
         }
     }
-
-
 
     public static function can_manage_slots(WP_REST_Request $request): bool
     {
@@ -245,7 +249,7 @@ final class SlotsAPI
     {
         global $wpdb;
 
-        $table_slots = self::table_name();
+        $table_slots = $wpdb->prefix . 'itmar_reservation_slots';
         $table_details = $wpdb->prefix . 'itmar_slot_details';
         $table_units = $wpdb->prefix . 'itmar_resource_units';
 
@@ -316,7 +320,7 @@ final class SlotsAPI
     {
         global $wpdb;
 
-        $table = self::table_name();
+        $table = $wpdb->prefix . 'itmar_reservation_slots';
         $id = (int) $request->get_param('id');
         $resource_id = (int) $request->get_param('resource_id');
         $slot_date = (string) $request->get_param('slot_date');
@@ -396,7 +400,7 @@ final class SlotsAPI
     {
         global $wpdb;
 
-        $table = self::table_name();
+        $table = $wpdb->prefix . 'itmar_reservation_slots';
         $id = (int) $request->get_param('id');
         if ($id <= 0) {
             return new WP_Error('invalid_id', 'Invalid id.', ['status' => 400]);
@@ -432,7 +436,7 @@ final class SlotsAPI
     {
         global $wpdb;
         //テーブルのセット
-        $table_slots = self::table_name();
+        $table_slots = $wpdb->prefix . 'itmar_reservation_slots';
         $table_details = $wpdb->prefix . 'itmar_slot_details';
         $table_units = $wpdb->prefix . 'itmar_resource_units';
 
@@ -487,20 +491,23 @@ final class SlotsAPI
                 ));
 
                 // ② 既存の時間枠（details）を一旦リセット（重複防止のためスクラップ＆ビルド）
-                $wpdb->delete($table_details, ['slot_id' => $slot_id], ['%d']);
+                //$wpdb->delete($table_details, ['slot_id' => $slot_id], ['%d']);
 
                 // ③ 時間枠（details）の生成
                 if ($is_allday) {
                     // 終日の場合：00:00 〜 23:59 で1枠作成
                     foreach ($units as $unit) {
-                        $wpdb->insert($table_details, [
-                            'slot_id'    => $slot_id,
-                            'unit_id'    => $unit->id,
-                            'start_time' => '00:00:00',
-                            'end_time'   => '23:59:59',
-                            'is_booked'  => 0,
-                            'status'     => 'open'
-                        ]);
+
+                        // INSERT IGNORE を使い、重複があれば何もしない（エラーも出さない）
+                        $wpdb->query($wpdb->prepare(
+                            "INSERT IGNORE INTO {$table_details} (slot_id, unit_id, start_time, end_time, is_booked, status) VALUES (%d, %d, %s, %s, %d, %s)",
+                            $slot_id,
+                            $unit->id,
+                            '00:00:00',
+                            '23:59:59',
+                            0,
+                            'open'
+                        ));
                     }
                 } else {
                     // 時間指定の場合：インターバルで回して作成
@@ -513,14 +520,16 @@ final class SlotsAPI
                         $t_end   = date('H:i:s', $next);
 
                         foreach ($units as $unit) {
-                            $wpdb->insert($table_details, [
-                                'slot_id'    => $slot_id,
-                                'unit_id'    => $unit->id,
-                                'start_time' => $t_start,
-                                'end_time'   => $t_end,
-                                'is_booked'  => 0,
-                                'status'     => 'open'
-                            ]);
+                            // ここも INSERT IGNORE で「あればスキップ」を実現
+                            $wpdb->query($wpdb->prepare(
+                                "INSERT IGNORE INTO {$table_details} (slot_id, unit_id, start_time, end_time, is_booked, status) VALUES (%d, %d, %s, %s, %d, %s)",
+                                $slot_id,
+                                $unit->id,
+                                $t_start,
+                                $t_end,
+                                0,
+                                'open'
+                            ));
                         }
                         $current = $next;
                     }
@@ -735,5 +744,131 @@ final class SlotsAPI
         );
 
         return rest_ensure_response(['success' => ($result !== false)]);
+    }
+
+    // スロット詳細を編集するメソッド（まとめて処理）
+    public static function handle_bulk_update_slot_details(\WP_REST_Request $request)
+    {
+        global $wpdb;
+        $table_details = $wpdb->prefix . 'itmar_slot_details';
+        $updates = $request->get_param('updates'); // [{id, is_booked, status}, ...]
+
+        if (!is_array($updates)) {
+            return new \WP_Error('invalid_data', 'Updates must be an array.', ['status' => 400]);
+        }
+
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            foreach ($updates as $item) {
+                $wpdb->update(
+                    $table_details,
+                    [
+                        'is_booked' => $item['is_booked'] ? 1 : 0,
+                        'status'    => sanitize_text_field($item['status'])
+                    ],
+                    ['id' => (int)$item['id']],
+                    ['%d', '%s'],
+                    ['%d']
+                );
+            }
+            $wpdb->query('COMMIT');
+        } catch (\Exception $e) {
+            $wpdb->query('ROLLBACK');
+            return new \WP_Error('db_error', $e->getMessage(), ['status' => 500]);
+        }
+
+        return rest_ensure_response(['success' => true, 'updated_count' => count($updates)]);
+    }
+
+    /**
+     * スロット詳細の一括削除
+     */
+    public static function handle_bulk_delete_slot_details(\WP_REST_Request $request)
+    {
+        global $wpdb;
+        $table_details = $wpdb->prefix . 'itmar_slot_details';
+        $table_slots   = $wpdb->prefix . 'itmar_reservation_slots';
+
+        // JSONボディから detail_ids を取得
+        $body = $request->get_body();
+        $params = json_decode($body, true);
+        $detail_ids = isset($params['detail_ids']) ? $params['detail_ids'] : [];
+        $sel_date = isset($params['sel_date']) ? $params['sel_date'] : "";
+        $resource_id = isset($params['resource_id']) ? $params['resource_id'] : "";
+
+        // バリデーション：配列が空なら何もしない
+        if (empty($detail_ids) || !is_array($detail_ids)) {
+            return new WP_Error('no_ids', __('The ID to be deleted has not been specified.', "itmaroon-booking-block"), ['status' => 400]);
+        }
+
+        // セキュリティ：すべてのIDを数値型に変換（SQLインジェクション対策）
+        $detail_ids = array_map('intval', $detail_ids);
+        $placeholders = implode(',', array_fill(0, count($detail_ids), '%d'));
+
+        // 【追加】削除対象の中に「予約済み」が含まれていないかチェック
+        $check_query = $wpdb->prepare(
+            "SELECT COUNT(*) FROM $table_details WHERE id IN ($placeholders) AND is_booked = 1",
+            ...$detail_ids
+        );
+        $booked_count = (int)$wpdb->get_var($check_query);
+
+        if ($booked_count > 0) {
+            return new WP_Error(
+                'has_bookings',
+                sprintf(__('This slot cannot be deleted because it contains %d reserved slots.', "itmaroon-booking-block"), $booked_count),
+                ['status' => 403]
+            );
+        }
+
+        // 親ID（slot_id）を特定しておく
+        // 子レコードを消す前に、どの親に紐付いているかを把握します
+        $get_slot_ids_query = $wpdb->prepare(
+            "SELECT DISTINCT slot_id FROM $table_details WHERE id IN ($placeholders)",
+            ...$detail_ids
+        );
+        $slot_ids = $wpdb->get_col($get_slot_ids_query);
+
+        // 3. 削除実行（トランザクション的に処理するのが理想）
+        $wpdb->query('START TRANSACTION');
+
+        // 削除実行
+        try {
+            // 子レコードを削除
+            $wpdb->query($wpdb->prepare(
+                "DELETE FROM $table_details WHERE id IN ($placeholders)",
+                ...$detail_ids
+            ));
+
+            // 親レコードを削除
+            if (!empty($slot_ids)) {
+                //複数の親スロットが検出されているのであれば一括削除
+                $slot_placeholders = implode(',', array_fill(0, count($slot_ids), '%d'));
+                $wpdb->query($wpdb->prepare(
+                    "DELETE FROM $table_slots WHERE id IN ($slot_placeholders)",
+                    ...$slot_ids
+                ));
+            } elseif ($resource_id && $sel_date) {
+                //日付の指定による削除も行う
+                $wpdb->delete(
+                    $table_slots,
+                    [
+                        'resource_id' => $resource_id,
+                        'slot_date'   => $sel_date
+                    ],
+                    ['%d', '%s']
+                );
+            }
+
+            $wpdb->query('COMMIT');
+        } catch (\Exception $e) {
+            $wpdb->query('ROLLBACK');
+            return new \WP_Error('db_error', '削除中にエラーが発生しました。', ['status' => 500]);
+        }
+
+        return [
+            'success' => true,
+            'deleted_count' => count($detail_ids),
+        ];
     }
 }

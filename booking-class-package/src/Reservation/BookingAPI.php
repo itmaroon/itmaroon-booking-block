@@ -28,7 +28,7 @@ final class BookingAPI
         register_rest_route('itmar/v1', '/bookings', [
             [
                 'methods'  => WP_REST_Server::CREATABLE, // POST
-                'callback' => [__CLASS__, 'bookings_exec'],
+                'callback' => [__CLASS__, 'create_booking'],
                 'permission_callback' => [__CLASS__, 'can_login_user'],
                 'args' => [],
             ],
@@ -66,7 +66,122 @@ final class BookingAPI
 
 
 
-    //予約処理を実行する
+
+    /**
+     * 予約実行 REST API ハンドラ
+     */
+    public static function create_booking(WP_REST_Request $request)
+    {
+        global $wpdb;
+
+        $table_bookings = $wpdb->prefix . 'itmar_bookings';
+        $table_slots = $wpdb->prefix . 'itmar_reservation_slots';
+        $table_slot_details = $wpdb->prefix . 'itmar_slot_details';
+
+        // 1. テーブルが存在しない場合は作成（dbDeltaを使用）
+        self::maybe_create_bookings_table($table_bookings);
+
+        // パラメータ取得
+        $resource_id  = $request->get_param('resource_id');
+        $guest_count  = intval($request->get_param('guest_count'));
+        $is_same_unit = $request->get_param('is_same_unit') === 'on';
+        $reserve_date = $request->get_param('reserveDate');
+        $reserve_time = $request->get_param('reserveTime');
+
+        $start_time = explode('～', $reserve_time)[0];
+
+        // ユーザーIDの取得  
+        $user_id = get_current_user_id();
+
+        // フロントエンドでも制御しますが、念のためサーバー側でもブロック
+        if (!$user_id) {
+            return new WP_Error('rest_not_logged_in', '予約にはログインが必要です。', ['status' => 401]);
+        }
+
+        // トランザクション開始
+        $wpdb->query('START TRANSACTION');
+
+        // 初期状態ではエラーなし
+        $error = null;
+
+        // 1. 親スロットID取得
+        $slot_id = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$table_slots} WHERE resource_id = %d AND slot_date = %s",
+            $resource_id,
+            $reserve_date
+        ));
+
+        if (!$slot_id) {
+            $error = new WP_Error('no_slot', '指定された日のスロットが見つかりません。', ['status' => 404]);
+        }
+
+        if (!$error) {
+            // 2. ユニット検索
+            $query = "SELECT id, capacity_num FROM {$table_slot_details} 
+                  WHERE slot_id = %d AND start_time = %s AND is_booked = 0 AND status = 'open'";
+
+            if ($is_same_unit) {
+                $query .= $wpdb->prepare(" AND capacity_num >= %d", $guest_count);
+            }
+            $query .= " ORDER BY capacity_num ASC FOR UPDATE";
+
+            $available_units = $wpdb->get_results($wpdb->prepare($query, $slot_id, $start_time));
+
+            // 3. 予約判定ロジック
+            $target_unit_ids = [];
+            if ($is_same_unit) {
+                if (empty($available_units)) {
+                    $error = new WP_Error('no_unit', 'ご希望の人数を収容できる単一のユニットがありません。', ['status' => 400]);
+                } else {
+                    $target_unit_ids = [$available_units[0]->id];
+                }
+            } else {
+                $current_capacity = 0;
+                foreach ($available_units as $unit) {
+                    $current_capacity += $unit->capacity_num;
+                    $target_unit_ids[] = $unit->id;
+                    if ($current_capacity >= $guest_count) break;
+                }
+                if ($current_capacity < $guest_count) {
+                    $error = new WP_Error('insufficient_capacity', '合計の空き容量が不足しています。', ['status' => 400]);
+                }
+            }
+        }
+
+        // エラーがあった場合の処理
+        if (is_wp_error($error)) {
+            $wpdb->query('ROLLBACK');
+            return $error; // WordPressが自動的に適切なJSONレスポンスに変換してくれます
+        }
+
+        // 4. 更新処理
+        foreach ($target_unit_ids as $id) {
+            $wpdb->update(
+                "{$table_slot_details}",
+                ['is_booked' => 1],
+                ['id' => $id]
+            );
+        }
+
+        // 確保した ID 配列をカンマ区切りの文字列にする
+        $detail_ids_string = implode(',', array_map('intval', $target_unit_ids));
+
+        $wpdb->insert(
+            "{$wpdb->prefix}itmar_bookings",
+            [
+                'user_id'         => $user_id,
+                'slot_detail_ids' => $detail_ids_string,
+                'guest_count'     => $guest_count,
+                'status'          => 'confirmed',
+                'created_at'      => current_time('mysql'),
+                'updated_at'      => current_time('mysql'),
+            ]
+        );
+
+        $wpdb->query('COMMIT');
+        return new WP_REST_Response(['success' => true, 'message' => '予約が完了しました。'], 200);
+    }
+
     public static function bookings_exec(WP_REST_Request $request)
     {
         global $wpdb;
@@ -217,23 +332,21 @@ final class BookingAPI
         global $wpdb;
         $charset_collate = $wpdb->get_charset_collate();
 
-        // テーブルが存在するかチェック
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") != $table_name) {
-            $sql = "CREATE TABLE $table_name (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            slot_id bigint(20) NOT NULL,
-            user_id bigint(20) NOT NULL,
-            guest_count int(11) NOT NULL DEFAULT 1,
-            status varchar(50) NOT NULL DEFAULT 'confirmed',
-            created_at datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
-            updated_at datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
-            PRIMARY KEY  (id),
-            KEY slot_id (slot_id),
-            KEY user_id (user_id)
-        ) $charset_collate;";
+        // dbDelta を使うので「存在チェック」なしで SQL を組んでも安全ですが、
+        // カラム構成を最新の状態に定義します
+        $sql = "CREATE TABLE $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        user_id bigint(20) NOT NULL,
+        slot_detail_ids text NOT NULL,
+        guest_count int(11) NOT NULL DEFAULT 1,
+        status varchar(50) NOT NULL DEFAULT 'confirmed',
+        created_at datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+        updated_at datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+        PRIMARY KEY  (id),
+        KEY user_id (user_id)
+    ) $charset_collate;";
 
-            require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-            dbDelta($sql);
-        }
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
     }
 }

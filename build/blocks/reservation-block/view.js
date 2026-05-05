@@ -12,9 +12,11 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   buildBookingListTableSource: () => (/* binding */ buildBookingListTableSource),
 /* harmony export */   buildCalendarTableSource: () => (/* binding */ buildCalendarTableSource),
+/* harmony export */   buildTimeTableSource: () => (/* binding */ buildTimeTableSource),
 /* harmony export */   renderBookingCellHtml: () => (/* binding */ renderBookingCellHtml),
 /* harmony export */   renderCancelButtonHtml: () => (/* binding */ renderCancelButtonHtml),
-/* harmony export */   renderTableFromTableSource: () => (/* binding */ renderTableFromTableSource)
+/* harmony export */   renderTableFromTableSource: () => (/* binding */ renderTableFromTableSource),
+/* harmony export */   slotInfoCalendar: () => (/* binding */ slotInfoCalendar)
 /* harmony export */ });
 /* harmony import */ var itmar_block_packages__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! itmar-block-packages */ "../../node_modules/itmar-block-packages/build/esm/DateElm.js");
 
@@ -50,6 +52,16 @@ const renderTableFromTableSource = (tableRoot, tableSource) => {
           }
         });
       }
+      //追加のスタイルを追加
+      if (cell.style) {
+        Object.entries(cell.style).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            // el.style["backgroundColor"] = "red" のような形で直接セット
+            // CSSのプロパティ名（kebab-case）でも、JSのプロパティ名（camelCase）でも動作します
+            el.style[key] = String(value);
+          }
+        });
+      }
       if (content == null) {
         // noop
       } else if (content instanceof Node) {
@@ -72,22 +84,96 @@ const renderTableFromTableSource = (tableRoot, tableSource) => {
  * calendar: [{date:number, weekday:number, holiday?:string, slotStatus?, slotCapacity?, slotId?}, ...]
  * renderCell: (dayObj, dayNum) => string|Node|any  // editorならReactNode、viewならHTML文字列
  */
+
+const slotInfoCalendar = (slots, ym, dateValues) => {
+  // 日付ごとに「時間帯別の集計」を一時保持する場所
+  // { [day]: { [time]: { avail: number, total: number } } }
+  const tempDailyStats = {};
+  (slots ?? []).forEach(row => {
+    const ymd = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_0__.normalizeDateYYYYMMDD)(row.slot_date);
+    if (!ymd.startsWith(`${ym}-`)) return;
+    const day = Number(ymd.slice(8, 10));
+    const time = `${row.start_time}～${row.end_time}`; // "09:00～10:00" など
+
+    if (!tempDailyStats[day]) tempDailyStats[day] = {};
+    if (!tempDailyStats[day][time]) tempDailyStats[day][time] = {
+      avail: 0,
+      total: 0
+    };
+
+    // その時間帯の合計を算出
+    if (row.status === "open") {
+      tempDailyStats[day][time].total += Number(row.capacity.max);
+      if (!row.is_booked) {
+        tempDailyStats[day][time].avail += Number(row.capacity.max);
+      }
+    }
+  });
+
+  // 2段階目：カレンダー表示用の判定ロジック
+  // dateValues（カレンダーの枠組み）に対してマッピング
+  const newDateValues = dateValues.map(dv => {
+    const day = Number(dv.date);
+    const timeSlots = tempDailyStats[day]; // その日の時間枠リスト
+
+    // A. データそのものがない場合 -> Closed（休業）
+    if (!timeSlots || Object.keys(timeSlots).length === 0) {
+      return {
+        ...dv,
+        slotStatus: "closed",
+        slotCapacity: 0,
+        capacityNum: 0
+      };
+    }
+    const timeKeys = Object.keys(timeSlots);
+
+    // B. 単一の時間枠のみ存在する場合 -> 数字を表示
+    if (timeKeys.length === 1) {
+      const stats = timeSlots[timeKeys[0]];
+      return {
+        ...dv,
+        slotStatus: "open",
+        // 状態を表示
+        slotCapacity: stats.avail,
+        capacityNum: stats.total
+      };
+    }
+    // C. 複数の時間枠がある場合 -> カレンダー上は数字を表示しない（空文字や特定の記号）
+    return {
+      ...dv,
+      slotStatus: "mixed",
+      // 内部的な判定用
+      slotCapacity: null,
+      // renderBookingCellHtml で null なら非表示にする
+      capacityNum: null
+    };
+  });
+  return {
+    dataVal: newDateValues,
+    dailyStats: tempDailyStats
+  };
+};
 const buildCalendarTableSource = (selectedMonth, calendar, {
   isMonday = false,
   headerFormatter = w => w.charAt(0).toUpperCase() + w.slice(1),
-  renderCell
+  renderCell,
+  renderStyle
 }) => {
   if (!selectedMonth || !Array.isArray(calendar) || calendar.length === 0) return [];
+  //selectedMonthから年、月、最終日を取り出す
   const {
     year,
     month,
     lastDay
   } = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_0__.getMonthRangeYmd)(selectedMonth);
   if (!year || !month || !lastDay) return [];
+  //その年月の初日の曜日を割り出す
   const firstDayOfMonth = new Date(year, month - 1, 1).getDay(); // 0..6
-
+  //カレンダーのグリッドを作る
   const areasStr = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_0__.generateGridAreas)(firstDayOfMonth, lastDay, isMonday);
   const lines = areasStr.split("\n").map(l => l.replace(/"/g, "").trim()).filter(Boolean);
+
+  //最初の行は予備の行にする
   const headerTokens = (lines[0] || "").split(/\s+/);
   let weekLines = lines.slice(1);
 
@@ -100,11 +186,11 @@ const buildCalendarTableSource = (selectedMonth, calendar, {
   const dayMap = new Map(calendar.map(d => [Number(d.date), d]));
   const tableSource = [];
 
-  // header row
+  // header row(曜日の表示)
   tableSource.push({
     cells: headerTokens.map(w => ({
       tag: "th",
-      content: headerFormatter(w)
+      content: headerFormatter(w) //最初の文字を大文字にするフォーマット
     }))
   });
 
@@ -124,21 +210,62 @@ const buildCalendarTableSource = (selectedMonth, calendar, {
           date: dayNum,
           weekday: "" // DayObjectで必須なら空文字等で初期化
         };
+        //その日の空き具合による背景色の設定
+        const cellBackground = dayObj.slotStatus === "closed" ? renderStyle.close_bg : dayObj.slotCapacity === 0 ? renderStyle.empty_bg : Number(dayObj.slotCapacity) / Number(dayObj.capacityNum) < renderStyle.enoughBorder / 100 ? renderStyle.low_bg : renderStyle.enough_bg;
+        //カーソルの設定
+        const cursorDisp = dayObj.slotStatus === "closed" ? "default" : "pointer";
         return {
           tag: "td",
           // string ではなく "td" 型として明示
-          content: renderCell(dayObj, dayNum),
+          content: renderCell(dayObj, dayNum, renderStyle),
+          style: {
+            background: cellBackground,
+            cursor: cursorDisp
+          },
           // ✅ ここに data 属性用のオブジェクトを追加
           attributes: {
             "data-date": dayObj.date,
-            "data-slot-id": dayObj.slotId || "",
-            "data-capacity": dayObj.slotCapacity || 0,
-            "data-status": dayObj.slotStatus || ""
+            "data-slotStatus": dayObj.slotStatus || ""
           }
         };
       })
     });
   }
+  return tableSource;
+};
+const buildTimeTableSource = (dailyStats, renderStyle) => {
+  const tableSource = [];
+
+  // 時間（Key）を昇順に並べてループを回す
+  const sortedTimes = Object.keys(dailyStats).sort();
+  sortedTimes.forEach(time => {
+    const stats = dailyStats[time];
+
+    //その日の空き具合による背景色の設定
+    const cellBackground = stats.avail === 0 ? renderStyle.empty_bg : Number(stats.avail) / Number(stats.total) < renderStyle.enoughBorder / 100 ? renderStyle.low_bg : renderStyle.enough_bg;
+    //空き状況記号
+    const remaindMark = stats.avail === 0 ? "✕" : Number(stats.avail) / Number(stats.total) < renderStyle.enoughBorder / 100 ? "△" : "〇";
+    const renderContent = renderStyle.remainDisp === "number" ? `remain: ${stats.avail}` : remaindMark;
+    const cursorDisp = !stats.avail ? "default" : "pointer";
+    tableSource.push({
+      cells: [{
+        tag: "td",
+        content: time
+      }, {
+        tag: "td",
+        content: renderContent,
+        style: {
+          background: cellBackground,
+          textAlign: "center",
+          cursor: cursorDisp
+        },
+        attributes: {
+          "data-time": time,
+          "data-avail": stats.avail
+        }
+      }]
+    });
+  });
   return tableSource;
 };
 const buildBookingListTableSource = (bookings, {
@@ -183,19 +310,23 @@ const buildBookingListTableSource = (bookings, {
   return tableSource;
 };
 const escapeHtml = s => String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
-const renderBookingCellHtml = (dayObj, dayNum) => {
-  const status = dayObj?.slotStatus ? escapeHtml(dayObj.slotStatus) : "";
-  const cap = Number.isFinite(Number(dayObj?.slotCapacity)) ? Number(dayObj.slotCapacity) : 0;
+const renderBookingCellHtml = (dayObj, dayNum, renderStyle) => {
+  const status = dayObj?.slotStatus || "";
+  // null の場合は空文字、数字がある場合はそのまま表示
+  const capDisplay = dayObj.slotCapacity !== null && dayObj.slotCapacity !== undefined ? `remain: ${dayObj.slotCapacity} ` : "";
+  //空き状況記号
+  const remaindMark = dayObj.slotCapacity === 0 ? "✕" : Number(dayObj.slotCapacity) / Number(dayObj.capacityNum) < renderStyle.enoughBorder / 100 ? "△" : dayObj.slotCapacity !== null && dayObj.slotCapacity !== undefined ? "〇" : "";
 
-  // 「holiday」文字は出さない
+  // 「holiday」文字
   const holiday = dayObj?.holiday && dayObj.holiday !== "holiday" ? escapeHtml(dayObj.holiday) : "";
   return `
-		<div style="line-height:1.3;">
-			<div style="font-weight:600;">${dayNum}</div>
-			${status ? `<div style="font-size:12px;opacity:0.9;">Status: ${status}</div>` : ""}
-			<div style="font-size:12px;opacity:0.9;">Cap: ${cap}</div>
-			${holiday ? `<div style="font-size:12px;opacity:0.9;">★ ${holiday}</div>` : ""}
-		</div>
+		<div style="line-height:1.3; min-height: 50px;">
+            <div style="font-weight:600;">${dayNum}</div>
+			${renderStyle.isDispHoliday ? `<div style="font-size:11px; opacity:0.8;">${holiday}</div>` : ""}
+            ${status === "closed" ? `<div style="color:red; font-size:10px;">${renderStyle.restDisp}</div>` : ""}
+            ${renderStyle.remainDisp === "number" && status != "closed" ? `<div style="font-size:11px; opacity:0.8;">${capDisplay}</div>` : ""}
+			${renderStyle.remainDisp === "sign" && status != "closed" ? `<div style="font-size:14px;text-align: center;padding-top:3px">${remaindMark}</div>` : ""}
+        </div>
 	`.trim();
 };
 const renderCancelButtonHtml = booking => {
@@ -833,45 +964,18 @@ var __webpack_exports__ = {};
   !*** ./src/blocks/reservation-block/view.ts ***!
   \**********************************************/
 __webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @wordpress/api-fetch */ "@wordpress/api-fetch");
-/* harmony import */ var _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var itmar_block_packages__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! itmar-block-packages */ "../../node_modules/itmar-block-packages/build/esm/DateElm.js");
-/* harmony import */ var itmar_block_packages__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! itmar-block-packages */ "../../node_modules/itmar-block-packages/build/esm/formatCreate.js");
-/* harmony import */ var _createTableSource__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./createTableSource */ "./src/blocks/reservation-block/createTableSource.ts");
+/* harmony import */ var _wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! @wordpress/i18n */ "@wordpress/i18n");
+/* harmony import */ var _wordpress_i18n__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! @wordpress/api-fetch */ "@wordpress/api-fetch");
+/* harmony import */ var _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_1___default = /*#__PURE__*/__webpack_require__.n(_wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_1__);
+/* harmony import */ var itmar_block_packages__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! itmar-block-packages */ "../../node_modules/itmar-block-packages/build/esm/DateElm.js");
+/* harmony import */ var itmar_block_packages__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! itmar-block-packages */ "../../node_modules/itmar-block-packages/build/esm/formatCreate.js");
+/* harmony import */ var _createTableSource__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./createTableSource */ "./src/blocks/reservation-block/createTableSource.ts");
+
 
 
  // 上で作った共通関数
 
-const normalizeDateYYYYMMDD = v => v ? String(v).slice(0, 10) : "";
-const mapSlotsByDay = (slots, ym) => {
-  // Mapの型を <number, DayObjectの一部> として定義
-  const map = new Map();
-  (slots || []).forEach(row => {
-    const ymd = normalizeDateYYYYMMDD(row.slot_date);
-    if (!ymd.startsWith(`${ym}-`)) return;
-    const day = Number(ymd.slice(8, 10));
-    map.set(day, {
-      slotId: Number(row.id),
-      slotStatus: row.status || "open",
-      slotCapacity: Number(row.capacity_total)
-    });
-  });
-  return map;
-};
-const mergeSlotsIntoCalendar = (calendar, slotMap) => {
-  return (calendar || []).map(d => {
-    const hit = slotMap.get(Number(d.date));
-    return hit ? {
-      ...d,
-      ...hit
-    } : {
-      ...d,
-      slotId: 0,
-      slotStatus: null,
-      slotCapacity: null
-    };
-  });
-};
 jQuery(function ($) {
   // ✅ 「1つの予約ブロック」ごとに初期化したいので、親ラッパーを推奨
   // 例: save.js の wrapper に class="wp-block-itmaroon-booking-block" を付ける
@@ -881,11 +985,28 @@ jQuery(function ($) {
     const $calendar = $root.find(".wp-block-itmar-design-calender").first();
     //テーブルブロックはすべて取得
     const $table = $root.find(".wp-block-itmar-design-table");
-    //設定された表示用テーブルの識別ID
-    const calendarTableId = $root.data("calendar-table-id");
-    const bookingTableId = $root.data("booking-table-id");
+
+    //オブジェクトに変換
+    const rawAttributes = $root.attr("data-attributes");
+    if (!rawAttributes) {
+      return;
+    }
+    const attributes = JSON.parse(rawAttributes);
+
+    // 必要な変数に割り当て
+    // 分割代入（Destructuring）を使うと非常にスッキリします
+    const {
+      resourceRest,
+      resourceId,
+      calendarTableId,
+      timeTableId,
+      bookingTableId,
+      ...renderStyle
+    } = attributes;
+
     //テーブルブロック
     const $calendarTable = $table.filter(`[data-define_id="${calendarTableId}"]`);
+    const $timeTable = $table.filter(`[data-define_id="${timeTableId}"]`);
     const $bookingTable = $table.filter(`[data-define_id="${bookingTableId}"]`);
 
     //要素の存在チェック
@@ -896,24 +1017,6 @@ jQuery(function ($) {
     const schedule = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(refresh, 50);
-    };
-    //ResourceIdの取得
-    const getResourceIdFromRoot = $root => {
-      // まず自分（念のため）
-      let v = $root.data("resourceId");
-      if (v != null) {
-        const n = Number(v);
-        if (Number.isFinite(n) && n > 0) return n;
-      }
-
-      // 次に配下（最初に見つかったもの）
-      const $hit = $root.find("[data-resource-id]").first();
-      if ($hit.length) {
-        v = $hit.attr("data-resource-id"); // data()より確実（DOM差し替えにも強い）
-        const n = Number(v);
-        if (Number.isFinite(n) && n > 0) return n;
-      }
-      return 0;
     };
 
     // ✅ select が差し替わってもOK（イベント委譲）
@@ -943,20 +1046,22 @@ jQuery(function ($) {
         subtree: false
       });
     }
+
+    //日毎データを定義
+    let monthDailyObj = {};
     async function refresh() {
       const selectedMonth = $calendar.find(MONTH_SELECT).val(); // "YYYY/MM"
       if (!selectedMonth) return;
+      //timeTableはいったん非表示
+      $timeTable.hide();
       const {
         from,
         to,
-        ym,
-        year,
-        month
-      } = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_1__.getMonthRangeYmd)(selectedMonth);
+        ym
+      } = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_2__.getMonthRangeYmd)(selectedMonth);
       if (!from || !to) return;
 
-      // resourceId は save.js で data-resource-id を出すのが最も安定
-      const resourceId = getResourceIdFromRoot($root);
+      // resourceId は save.js で data-attributesを出すのが最も安定
       if (!resourceId) return;
       const mySeq = ++seq;
       //$calendarに祝日情報があれば配列を作る
@@ -964,37 +1069,60 @@ jQuery(function ($) {
       const holidays = holidayString ? JSON.parse(holidayString) : [];
 
       // ✅ 月の基本配列（祝日込み）
-      const baseCalendar = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_1__.generateMonthCalendar)(selectedMonth, holidays);
+      const baseCalendar = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_2__.generateMonthCalendar)(selectedMonth, holidays);
 
       // ✅ slots取得
       const slotPath = `/itmar/v1/slots?resource_id=${encodeURIComponent(resourceId)}` + `&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-      const slots = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_0___default()({
+      const slots = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_1___default()({
         path: slotPath
       });
       if (mySeq !== seq) return;
-      const slotMap = mapSlotsByDay(slots, ym);
-      const mergedCalendar = mergeSlotsIntoCalendar(baseCalendar, slotMap);
+
+      //カレンダーテーブルレンダリング用のデータを生成
+      const calendarInfoObj = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_4__.slotInfoCalendar)(slots, ym, baseCalendar);
 
       // ✅ 共通 buildCalendarTableSource を使用（renderCellだけview用に注入）
-      const calendarSource = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_3__.buildCalendarTableSource)(selectedMonth, mergedCalendar, {
+      const calendarSource = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_4__.buildCalendarTableSource)(selectedMonth, calendarInfoObj.dataVal, {
         isMonday: false,
-        renderCell: _createTableSource__WEBPACK_IMPORTED_MODULE_3__.renderBookingCellHtml
+        renderCell: _createTableSource__WEBPACK_IMPORTED_MODULE_4__.renderBookingCellHtml,
+        renderStyle: {
+          isDispHoliday: renderStyle.isHoliday,
+          enoughBorder: renderStyle.enoughBorder,
+          enough_bg: renderStyle.enoughBgColor || renderStyle.enoughGradient,
+          low_bg: renderStyle.lowBgColor || renderStyle.lowGradient,
+          empty_bg: renderStyle.emptyBgColor || renderStyle.emptyGradient,
+          close_bg: renderStyle.closeBgColor || renderStyle.closeGradient,
+          remainDisp: renderStyle.remainDisp,
+          restDisp: renderStyle.restDisp
+        }
       });
-      const bookingPath = "/itmar/v1/get_user_bookings";
-      const bookings = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_0___default()({
-        path: bookingPath
-      });
+      //日毎データを確保
+      monthDailyObj = calendarInfoObj.dailyStats;
 
-      // 予約一覧用の Source を作成
-      const bookingSource = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_3__.buildBookingListTableSource)(bookings, {
-        renderActions: _createTableSource__WEBPACK_IMPORTED_MODULE_3__.renderCancelButtonHtml
-      });
-
-      //テーブルの再レンダリング
+      //カレンダーテーブルの再レンダリング
       const calendarTableElement = $calendarTable[0] || null;
-      (0,_createTableSource__WEBPACK_IMPORTED_MODULE_3__.renderTableFromTableSource)(calendarTableElement, calendarSource);
-      const bookingTableElement = $bookingTable[0] || null;
-      (0,_createTableSource__WEBPACK_IMPORTED_MODULE_3__.renderTableFromTableSource)(bookingTableElement, bookingSource);
+      (0,_createTableSource__WEBPACK_IMPORTED_MODULE_4__.renderTableFromTableSource)(calendarTableElement, calendarSource);
+
+      //予約済みテーブルの処理
+      if (itmar_option.isLoggedIn) {
+        try {
+          //予約済みデータの取得
+          const bookingPath = "/itmar/v1/get_user_bookings";
+          const bookings = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_1___default()({
+            path: bookingPath
+          });
+
+          // 予約一覧用の Source を作成
+          const bookingSource = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_4__.buildBookingListTableSource)(bookings, {
+            renderActions: _createTableSource__WEBPACK_IMPORTED_MODULE_4__.renderCancelButtonHtml
+          });
+          //テーブルの再レンダリング
+          const bookingTableElement = $bookingTable[0] || null;
+          (0,_createTableSource__WEBPACK_IMPORTED_MODULE_4__.renderTableFromTableSource)(bookingTableElement, bookingSource);
+        } catch (err) {
+          console.error(err.message);
+        }
+      }
     }
 
     //Design Titleの中味にデータ流し込むヘルパ
@@ -1003,6 +1131,20 @@ jQuery(function ($) {
       if ($targetDiv.length) {
         // テキストを流し込む
         $targetDiv.text(formatedValue);
+      }
+    };
+
+    // リソース情報を取得する関数
+
+    const fetchResourceTitle = async id => {
+      try {
+        // resourceId を使って投稿情報を取得
+        const post = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_1___default()({
+          path: `/wp/v2/${resourceRest}/${id}`
+        });
+        return post.title.rendered;
+      } catch (error) {
+        console.error("リソース名の取得に失敗しました:", error);
       }
     };
 
@@ -1015,27 +1157,101 @@ jQuery(function ($) {
       const selectedMonth = $calendar.find(MONTH_SELECT).val(); // "YYYY/MM"
       if (!selectedMonth) return;
       const $clickedCell = $(this);
-      const selDate = `${selectedMonth}/${$clickedCell.data("date")}`;
-      const slotId = $clickedCell.data("slot-id");
-      const slotCapa = $clickedCell.data("capacity");
+      const selDateNum = Number($clickedCell.data("date"));
+      //その日の予定がなければ終了
+      if (!monthDailyObj[selDateNum]) return;
 
+      // 1. テーブル内のすべての td から "currentSel" クラスを一旦削除
+      $calendarTable.find("td").removeClass("currentSel");
+
+      // 2. クリックされたセル（this）だけに "currentSel" クラスを追加
+      $clickedCell.addClass("currentSel");
+
+      //時間単位の情報が複数あるなら時間テーブルを表示して終了
+      if (Object.keys(monthDailyObj[selDateNum]).length > 1) {
+        const timeStyle = {
+          isDispHoliday: renderStyle.isHoliday,
+          enoughBorder: renderStyle.enoughBorder,
+          enough_bg: renderStyle.enoughBgColor || renderStyle.enoughGradient,
+          low_bg: renderStyle.lowBgColor || renderStyle.lowGradient,
+          empty_bg: renderStyle.emptyBgColor || renderStyle.emptyGradient,
+          close_bg: renderStyle.closeBgColor || renderStyle.closeGradient,
+          remainDisp: renderStyle.remainDisp
+        };
+        const timetableSource = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_4__.buildTimeTableSource)(monthDailyObj[selDateNum], timeStyle);
+
+        //テーブルの再レンダリング
+        const timeTableElement = $timeTable[0] || null;
+        (0,_createTableSource__WEBPACK_IMPORTED_MODULE_4__.renderTableFromTableSource)(timeTableElement, timetableSource);
+        //timeTableを表示
+        $timeTable.show();
+        return;
+      }
+    });
+
+    // $timeTable 内のセル（td）がクリックされた時のイベント（予約登録）
+    $timeTable.on("click", "td", function () {
+      //選択された月を取得
+      const selectedMonth = $calendar.find(MONTH_SELECT).val(); // "YYYY/MM"
+      if (!selectedMonth) return;
+      //選択された日付
+      if (!$calendarTable.find("td.currentSel").length) return;
+      const selDay = $calendarTable.find("td.currentSel").data("date");
+      //空きがないときは終了
+      const $clickedCell = $(this);
+      if ($clickedCell.data("avail") < 1) return;
+
+      //日付文字列の生成
+      // 1. スラッシュをハイフンに置換 (2026/05 -> 2026-05)
+      const yearMonth = selectedMonth.replace(/\//g, "-");
+
+      // 2. 日付を2桁にパディング (5 -> 05)
+      const dayPadded = String(selDay).padStart(2, "0");
+
+      // 3. 結合して YYYY-MM-DD 完成
+      const formattedDate = `${yearMonth}-${dayPadded}`;
+      //モーダルを出す
+      comfirm_modal_disp(formattedDate, $clickedCell.data("time"));
+    });
+
+    //予約確認のモーダルを出す
+    const comfirm_modal_disp = async (selDate, timeValue) => {
       //モーダル内の日付表示要素を取得
       const $dateElm = $reservation_modal.find('[data-unique_id="reservation_date"]');
 
       //フォーマットを当てて表示
-      const formatedValue = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_2__.displayFormated)(selDate, $dateElm.data("user_format"), $dateElm.data("free_format"), $dateElm.data("decimal"));
-      enterTitle($dateElm, formatedValue);
+      const formatedValue = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_3__.displayFormated)(selDate, $dateElm.data("user_format"), $dateElm.data("free_format"), $dateElm.data("decimal"));
+      if ($dateElm) {
+        enterTitle($dateElm, formatedValue);
+        $dateElm.attr("data-value", selDate);
+      }
+      //モーダル内の時間表示要素を取得
+      const $timeElm = $reservation_modal.find('[data-unique_id="reservation_time"]');
+      if ($timeElm) {
+        enterTitle($timeElm, timeValue);
+        $timeElm.attr("data-value", timeValue);
+      }
+      //リソース名を取得
+      const $resouceElm = $reservation_modal.find('[data-unique_id="resource_name"]');
+      if ($resouceElm) {
+        const resourceName = (await fetchResourceTitle(resourceId)) || "";
+        enterTitle($resouceElm, resourceName);
+      }
+      console.log(itmar_option.isLoggedIn);
+      //ログインのチェック
+      if (!itmar_option.isLoggedIn) {
+        alert("予約にはログインが必要です。");
+        // 必要ならログインページへリダイレクト
+        // window.location.href = wpApiSettings.login_url;
+        return;
+      }
       if ($reservation_modal.length) {
-        //
-        $reservation_modal.data("slot-id", slotId);
-        // 人数入力の上限だけは反映させておく
-        $reservation_modal.find('input[name="guest_count"]').attr("max", slotCapa);
         // モーダルを表示（CSSで display: none になっている場合）
         $reservation_modal.fadeIn();
       } else {
         console.error("モーダルが見つかりません。IDを確認してください。");
       }
-    });
+    };
 
     //キャンセル確認のモーダルを出す
     const $cancel_modal = $root.find("#cancel_modal").parent().parent();
@@ -1057,7 +1273,7 @@ jQuery(function ($) {
       //モーダル内の日付表示要素を取得
       const $dateElm = $cancel_modal.find('[data-unique_id="reservation_date"]');
       //フォーマットを当てて表示
-      const formatedValue = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_2__.displayFormated)(rowData[0], $dateElm.data("user_format"), $dateElm.data("free_format"), $dateElm.data("decimal"));
+      const formatedValue = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_3__.displayFormated)(rowData[0], $dateElm.data("user_format"), $dateElm.data("free_format"), $dateElm.data("decimal"));
       enterTitle($dateElm, formatedValue);
       const $slotNameElm = $cancel_modal.find('[data-unique_id="slot_name"]');
       enterTitle($slotNameElm, rowData[1]);
@@ -1073,28 +1289,35 @@ jQuery(function ($) {
 
       const $form = $(this);
       const $submitBtn = $form.find('button[type="submit"]');
-      const $modalElement = $form.closest($reservation_modal);
 
       // ✅ モーダルに保存しておいた ID を取得
-      const slotId = $modalElement.data("slot-id");
+      //const slotId = $modalElement.data("slot-id");
 
-      // フォーム内の「人数」を取得
+      // フォーム内のデータを取得
       const guestCount = $form.find('input[name="guest_count"]').val();
+      const isSameUnit = $form.find('input[name="same_table"]').val();
+      const reserveDate = $form.find('[data-unique_id="reservation_date"]')?.attr("data-value");
+      const reserveTime = $form.find('[data-unique_id="reservation_time"]')?.attr("data-value");
 
       // 送信データを作成
       const data = {
-        slot_id: slotId,
-        guest_count: guestCount
+        resource_id: resourceId,
+        guest_count: guestCount,
+        is_same_unit: isSameUnit,
+        reserveDate: reserveDate,
+        reserveTime: reserveTime
       };
+
       // ボタンを無効化して連打防止
-      $submitBtn.prop("disabled", true).text("送信中...");
+      const keepBtnText = $submitBtn.text();
+      $submitBtn.prop("disabled", true).text((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Sending...", "itmaroon-booking-block"));
       try {
-        await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_0___default()({
+        await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_1___default()({
           path: "/itmar/v1/bookings",
           method: "POST",
           data: data
         });
-        alert("予約が完了しました！");
+        alert((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Reservation is complete!", "itmaroon-booking-block"));
 
         // ✅ 予約が成功したので、カレンダーの残数を最新にするために再描画
         if (typeof refresh === "function") {
@@ -1104,14 +1327,14 @@ jQuery(function ($) {
         // error が Error オブジェクトかどうかをチェック
         if (error instanceof Error) {
           console.error("予約エラー:", error.message);
-          alert("予約に失敗しました: " + error.message);
+          alert((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Reservation failed:", "itmaroon-booking-block"));
         } else {
           // 文字列などが投げられた場合のフォールバック
           console.error("予期せぬエラー:", error);
-          alert("不明なエラーが発生しました");
+          alert((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("An error has occurred!", "itmaroon-booking-block"));
         }
       } finally {
-        $submitBtn.prop("disabled", false).text("予約を確定する");
+        $submitBtn.prop("disabled", false).text(keepBtnText);
         $reservation_modal.fadeOut();
       }
     });
@@ -1135,7 +1358,7 @@ jQuery(function ($) {
         id: bookingId
       };
       try {
-        await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_0___default()({
+        await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_1___default()({
           path: "/itmar/v1/cancel_booking",
           method: "POST",
           data: data

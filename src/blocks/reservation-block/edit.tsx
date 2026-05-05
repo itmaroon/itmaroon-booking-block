@@ -10,6 +10,7 @@ import type {
 	BulkResult,
 	userBooking,
 	SlotDetail,
+	SlotUsing,
 } from "./types";
 import {
 	PanelBody,
@@ -20,11 +21,14 @@ import {
 	Button,
 	BaseControl,
 	SelectControl,
+	RangeControl,
+	RadioControl,
 } from "@wordpress/components";
 import {
 	useBlockProps,
 	useInnerBlocksProps,
 	InspectorControls,
+	__experimentalPanelColorGradientSettings as PanelColorGradientSettings,
 } from "@wordpress/block-editor";
 
 import { useState, useMemo, useEffect, useRef } from "@wordpress/element";
@@ -45,7 +49,9 @@ import {
 	buildCalendarTableSource,
 	renderBookingCellHtml,
 	buildBookingListTableSource,
+	buildTimeTableSource,
 	renderCancelButtonHtml,
+	slotInfoCalendar,
 } from "./createTableSource";
 
 import SlotEditModal from "./SlotEditModal";
@@ -63,7 +69,7 @@ const WEEKDAYS = [
 ];
 
 export default function Edit(props: BlockEditProps<BookingAttributes>) {
-	const { attributes, setAttributes, clientId } = props;
+	const { attributes, setAttributes, clientId, isSelected } = props;
 	const {
 		resourceId,
 		resourceSlug,
@@ -71,13 +77,27 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		selectedRest,
 		calendarTableId,
 		bookingTableId,
-		capacityDefault,
+		timeTableId,
 		closedWeekdays,
 		confirmThings,
+		isHoliday,
+		enoughBorder,
+		enoughBgColor,
+		enoughGradient,
+		lowBgColor,
+		lowGradient,
+		emptyBgColor,
+		emptyGradient,
+		closeBgColor,
+		closeGradient,
+		remainDisp,
+		restDisp,
 	} = attributes;
 
 	// dispatch関数を取得
-	const { updateBlockAttributes } = useDispatch(blockEditorStore.name) as any;
+	const { updateBlockAttributes, selectBlock } = useDispatch(
+		blockEditorStore.name,
+	) as any;
 	//インナーブロックのひな型を用意
 	const TEMPLATE: TemplateArray = [];
 	const blockProps = useBlockProps();
@@ -115,6 +135,12 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 					b.attributes?.defineID === calendarTableId,
 			);
 
+			const timeTable = allBlocks.find(
+				(b: any) =>
+					b.name === "itmar/design-table" &&
+					b.attributes?.defineID === timeTableId,
+			);
+
 			const reservatedTable = allBlocks.find(
 				(b: any) =>
 					b.name === "itmar/design-table" &&
@@ -129,6 +155,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				innerBlocksData: {
 					calendarFromInner: calendarBlock || null,
 					tableFromInner: calendarTable || null,
+					timeFromInner: timeTable || null,
 					reservatedInner: reservatedTable || null,
 					displayTables: displayTables || null,
 				},
@@ -138,9 +165,15 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	);
 
 	// 使うときは分割代入で
-	const { calendarFromInner, tableFromInner, reservatedInner, displayTables } =
-		innerBlocksData;
+	const {
+		calendarFromInner,
+		tableFromInner,
+		timeFromInner,
+		reservatedInner,
+		displayTables,
+	} = innerBlocksData;
 
+	//カレンダーテーブルで選択された年月日
 	const selectedDateYmd = useMemo<string | null>(() => {
 		return toYmdFromMonthAndDay(
 			calendarFromInner?.attributes?.selectedMonth,
@@ -151,20 +184,36 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		calendarFromInner?.attributes?.selectedValue,
 	]);
 
+	//枠を作る日付を生成
+	const pad2 = (n: number) => String(n).padStart(2, "0");
+
 	// 週休日のセット
 	const closedSet = useMemo<Set<number>>(
 		() => new Set<number>(closedWeekdays ?? []),
 		[closedWeekdays],
 	);
 
-	// ===== 日別編集UIの状態 =====
+	const datesToCreate = useMemo<string[]>(() => {
+		const selectedMonth = calendarFromInner?.attributes?.selectedMonth; // "YYYY/MM"
+		if (!selectedMonth) return [];
+
+		const [yStr, mStr] = String(selectedMonth).split("/");
+		const year = Number(yStr);
+		const month = Number(mStr);
+		if (!year || !month) return [];
+
+		return generateMonthCalendar(selectedMonth)
+			.filter((d) => !closedSet.has(Number(d.weekday)))
+			.map((d) => `${year}-${pad2(month)}-${pad2(Number(d.date))}`); // "YYYY-MM-DD"
+	}, [calendarFromInner?.attributes?.selectedMonth, closedSet]);
+
+	// =====状態変数 =====
+	const [isInitialized, setIsInitialized] = useState(false); // 初期化完了フラグ
+
+	const [lastUpdated, setLastUpdated] = useState(Date.now()); // 保存が成功するたびに更新するカウンター
 	const [dayLoading, setDayLoading] = useState<boolean>(false);
 	const [dayError, setDayError] = useState<string>("");
-	const [daySlotId, setDaySlotId] = useState<number>(0);
-	const [dayCapacity, setDayCapacity] = useState<number>(0);
-	const [dayStatus, setDayStatus] = useState<SlotRow["status"]>("open");
 	const [slotRows, setSlotRows] = useState<SlotDetail[]>([]);
-	const [daySaving, setDaySaving] = useState<boolean>(false);
 	const [dayNotice, setDayNotice] = useState<{
 		status: "error" | "success" | "warning" | "info" | undefined;
 		message: string;
@@ -206,23 +255,64 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		startTime: "00:00",
 		endTime: "00:00",
 	});
-	const [spanList, setSpanList] = useState<TypeSpan[]>([]); // 保存済みユニットのリスト
+
 	const [travel, setTravel] = useState<number>(60);
 
 	//スロット編集Modal表示フラグ
-	const [isModalOpen, setIsModalOpen] = useState(false);
+	const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+
+	// 日付ごとの詳細データを保持するステート
+	const [dailyStatsMap, setDailyStatsMap] = useState<Record<number, SlotUsing>>(
+		{},
+	);
+
+	//各ブロックの初期化
+	useEffect(() => {
+		if (
+			!isInitialized &&
+			calendarFromInner &&
+			timeFromInner &&
+			tableFromInner
+		) {
+			// 命令を出す（ここでのawaitは、あくまで命令の送信完了まで）
+			updateBlockAttributes(calendarFromInner.clientId, { selectedValue: 0 });
+			updateBlockAttributes(timeFromInner.clientId, { tableSource: [] });
+			updateBlockAttributes(tableFromInner.clientId, { clickCellPos: {} });
+		}
+	}, [
+		isInitialized,
+		calendarFromInner?.clientId,
+		timeFromInner?.clientId,
+		tableFromInner?.clientId,
+	]);
+	useEffect(() => {
+		// すべての値が「初期値」に戻ったことを確認できたら、初めて準備完了とする
+		const isReset =
+			calendarFromInner?.attributes?.selectedValue === 0 &&
+			timeFromInner?.attributes?.tableSource?.length === 0 &&
+			Object.keys(tableFromInner?.attributes?.clickCellPos || {}).length === 0;
+
+		if (isReset && !isInitialized) {
+			setIsInitialized(true);
+		}
+	}, [
+		calendarFromInner?.attributes?.selectedValue,
+		timeFromInner?.attributes?.tableSource,
+		tableFromInner?.attributes?.clickCellPos,
+	]);
+	//選択月が変ったら一旦初期化
+	useEffect(() => {
+		setIsInitialized(false);
+	}, [calendarFromInner?.attributes?.selectedMonth]);
 
 	// 選択日 or resourceId が変わったら、その日の slot を DB から取得
 	useEffect(() => {
 		const fetchDaySlot = async (): Promise<void> => {
 			setDayError("");
 			setDayNotice({ status: undefined, message: "" });
-			setDaySlotId(0);
 
-			// 条件が揃わないならフォーム初期化だけ
+			// 条件が揃わないなら終了
 			if (!resourceId || !selectedDateYmd) {
-				setDayCapacity(Number(capacityDefault || 0));
-				setDayStatus("open");
 				return;
 			}
 
@@ -235,6 +325,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				)}`;
 
 				const rows = await apiFetch({ path });
+
 				//データベースから取ってきたデータをステータスにセット
 				setSlotRows(rows as SlotDetail[]);
 			} catch (e) {
@@ -251,102 +342,23 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		fetchDaySlot();
 	}, [resourceId, selectedDateYmd, monthNotice]);
 
-	const saveSelectedDay = async (): Promise<void> => {
-		setDayNotice({ status: undefined, message: "" });
-		setDayError("");
-
-		if (!resourceId) {
-			setDayNotice({
-				status: "error",
-				message: __("Resource is not selected.", "itmaroon-booking-block"),
-			});
-			return;
-		}
-		if (!selectedDateYmd) {
-			setDayNotice({
-				status: "error",
-				message: __("No date selected on calendar.", "itmaroon-booking-block"),
-			});
-			return;
-		}
-
-		setDaySaving(true);
-		try {
-			const payload: Omit<SlotRow, "id"> & { id: number } = {
-				id: daySlotId ? Number(daySlotId) : 0,
-				resource_id: Number(resourceId),
-				slot_date: selectedDateYmd,
-				capacity_total: Number(dayCapacity || 0),
-				status: dayStatus,
-			};
-			const saved = await apiFetch<SlotRow>({
-				path: "/itmar/v1/slots",
-				method: "POST",
-				data: payload,
-			});
-
-			setDaySlotId(Number(saved.id));
-			setDayCapacity(Number(saved.capacity_total));
-			setDayStatus(saved.status || "open");
-
-			setDayNotice({
-				status: "success",
-				message: __("Saved.", "itmaroon-booking-block"),
-			});
-		} catch (e) {
-			const error = e as { message?: string };
-			setDayNotice({
-				status: "error",
-				message: error?.message ?? __("Save failed.", "itmaroon-booking-block"),
-			});
-		} finally {
-			setDaySaving(false);
-		}
-	};
-
-	//トグルボタンのイベントドリブン
-	const onToggleClosed = (dow: number): void => {
-		const cur: number[] = Array.isArray(closedWeekdays) ? closedWeekdays : [];
-		if (cur.includes(dow)) {
-			setAttributes({ closedWeekdays: cur.filter((x) => x !== dow) });
-		} else {
-			setAttributes({ closedWeekdays: [...cur, dow].sort((a, b) => a - b) });
-		}
-	};
-	//枠を作る日付を生成
-	const pad2 = (n: number) => String(n).padStart(2, "0");
-
-	const datesToCreate = useMemo<string[]>(() => {
-		const selectedMonth = calendarFromInner?.attributes?.selectedMonth; // "YYYY/MM"
-		if (!selectedMonth) return [];
-
-		const [yStr, mStr] = String(selectedMonth).split("/");
-		const year = Number(yStr);
-		const month = Number(mStr);
-		if (!year || !month) return [];
-
-		return generateMonthCalendar(selectedMonth)
-			.filter((d) => !closedSet.has(Number(d.weekday)))
-			.map((d) => `${year}-${pad2(month)}-${pad2(Number(d.date))}`); // "YYYY-MM-DD"
-	}, [calendarFromInner?.attributes?.selectedMonth, closedSet]);
-
-	//枠のデータをカスタムテーブルから取得
-	// dateValuesの変化を検知するための軽い署名（必要な要素だけ）
-	const dateValuesSig = (arr: DayObject[] | undefined): string =>
-		JSON.stringify(
-			(arr || []).map((d: DayObject) => [d.date, d.weekday, d.holiday || ""]),
-		);
-
-	// tableSourceの変化検知（必要ならもっと軽くしてOK）
-	const tableSig = (arr: TableRow[] | undefined): string =>
-		JSON.stringify(arr || []);
-
-	// ★ コンポーネント外に置かず、Edit 内で useRef で保持
-	const requestSeqRef = useRef<number>(0);
-
+	//slotRows(選択された日付に対応するスロット)が変化したとき
 	useEffect(() => {
-		//日単位更新フラグも、月単位更新フラグもオン状態なら処理しない。
-		if (daySaving && monthSaving) return;
+		// 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
+		if (!isInitialized) return;
+
+		const selDay = calendarFromInner?.attributes?.selectedValue;
+
+		//その日のスロットデータなければ終了
+		if (!dailyStatsMap[selDay]) return;
+		//スロット編集用モーダルの表示
+		setIsModalOpen(true);
+	}, [slotRows]);
+
+	//カレンダーテーブルのレンダリング
+	useEffect(() => {
+		// 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
+		if (!isInitialized) return;
 
 		const runSlotDataGet = async (): Promise<void> => {
 			if (!calendarFromInner) return;
@@ -371,52 +383,38 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			};
 			if (!from || !to) return;
 
-			const path =
+			const slotPath =
 				`/itmar/v1/slots?resource_id=${encodeURIComponent(resourceId)}` +
 				`&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
 
-			const data = await apiFetch<SlotRow[]>({ path });
+			const slots = await apiFetch<SlotRow[]>({ path: slotPath });
 
 			// 途中で月が切り替わっていたら破棄
 			if (mySeq !== requestSeqRef.current) return;
 
-			interface DaySlot {
-				id: number;
-				status: SlotRow["status"];
-				capacity: number;
-			}
+			//カレンダーテーブルレンダリング用のデータを生成
+			const calendarInfoObj = slotInfoCalendar(slots, ym, dateValues);
 
-			const mapByDay = new Map<number, DaySlot>();
-			(data ?? []).forEach((row: SlotRow) => {
-				const ymd = normalizeDateYYYYMMDD(row.slot_date);
-				if (!ymd.startsWith(`${ym}-`)) return;
-				const day = Number(ymd.slice(8, 10));
-				mapByDay.set(day, {
-					id: Number(row.id),
-					status: row.status ?? "open",
-					capacity: Number(row.capacity_total),
-				});
-			});
+			//日毎の詳細を保存
+			setDailyStatsMap(calendarInfoObj.dailyStats);
 
-			const newDateValues = dateValues.map((dv) => {
-				const day = Number(dv.date);
-				const hit = mapByDay.get(day);
-				return hit
-					? {
-							...dv,
-							slotId: hit.id,
-							slotStatus: hit.status,
-							slotCapacity: hit.capacity,
-					  }
-					: { ...dv, slotId: 0, slotStatus: null, slotCapacity: null };
-			});
-
+			//テーブル表示用のソースを生成
 			const booking_data = buildCalendarTableSource(
 				calendarFromInner?.attributes?.selectedMonth as string,
-				newDateValues,
+				calendarInfoObj.dataVal as DayObject[],
 				{
 					isMonday: false,
 					renderCell: renderBookingCellHtml,
+					renderStyle: {
+						isDispHoliday: isHoliday,
+						enoughBorder: enoughBorder,
+						enough_bg: enoughBgColor || enoughGradient,
+						low_bg: lowBgColor || lowGradient,
+						empty_bg: emptyBgColor || emptyGradient,
+						close_bg: closeBgColor || closeGradient,
+						remainDisp: remainDisp,
+						restDisp: restDisp,
+					},
 				},
 			);
 
@@ -436,17 +434,71 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			console.error("sync slots -> calendar dateValues failed:", e),
 		);
 	}, [
+		isInitialized,
 		calendarFromInner?.clientId,
 		resourceId,
-		daySaving,
-		monthSaving,
-		//calendarFromInner?.attributes?.selectedMonth,
-		useMemo(
-			() => dateValuesSig(calendarFromInner?.attributes?.dateValues),
-			[calendarFromInner?.attributes?.dateValues],
-		),
 		tableFromInner?.clientId,
 		reservatedInner?.clientId,
+		lastUpdated,
+		isHoliday,
+		enoughBorder,
+		enoughBgColor,
+		enoughGradient,
+		lowBgColor,
+		lowGradient,
+		emptyBgColor,
+		emptyGradient,
+		closeBgColor,
+		closeGradient,
+		remainDisp,
+		restDisp,
+	]);
+
+	//時間別のテーブルレンダリング
+	useEffect(() => {
+		// 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
+		if (!isInitialized) return;
+
+		const selDay = calendarFromInner?.attributes?.selectedValue;
+
+		//時間別集計未了の場合はテーブルをクリア
+		if (
+			!dailyStatsMap[selDay] ||
+			Object.keys(dailyStatsMap).length === 0 ||
+			selDay === 0
+		) {
+			updateBlockAttributes(timeFromInner?.clientId, {
+				tableLayout: "fixed",
+				tableSource: [],
+			});
+			return;
+		}
+
+		//時間別のテーブルを更新
+		const renderStyle = {
+			isDispHoliday: isHoliday,
+			enoughBorder: enoughBorder,
+			enough_bg: enoughBgColor || enoughGradient,
+			low_bg: lowBgColor || lowGradient,
+			empty_bg: emptyBgColor || emptyGradient,
+			close_bg: closeBgColor || closeGradient,
+			remainDisp: remainDisp,
+			restDisp: restDisp,
+		};
+
+		const timetableSource = buildTimeTableSource(
+			dailyStatsMap[selDay],
+			renderStyle,
+		);
+
+		updateBlockAttributes(timeFromInner?.clientId, {
+			tableLayout: "fixed",
+			tableSource: timetableSource,
+		});
+	}, [
+		isInitialized,
+		dailyStatsMap,
+		calendarFromInner?.attributes?.selectedValue,
 	]);
 
 	//予約済みデータの表示
@@ -483,18 +535,22 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 
 	//予定表上のテーブルをクリックしたときの処理
 	useEffect(() => {
+		// 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
+		if (!isInitialized) return;
+
 		//選択した月
 		const selectedMonth = calendarFromInner?.attributes?.selectedMonth as
 			| string
 			| undefined;
 		//１日の位置を計算
 		const { year, month, lastDay } = getMonthRangeYmd(selectedMonth);
+
 		const firstDayOfMonth = new Date(year, month - 1, 1).getDay();
 
 		// 子ブロックから取得したクリック位置
 		const row = tableFromInner?.attributes?.clickCellPos?.row;
 		const col = tableFromInner?.attributes?.clickCellPos?.col;
-		if (!row || !col) return;
+		//if (!row || !col) return;
 
 		// 通し番号（セル番号）を計算
 		const cellIndex = (row - 1) * 7 + col;
@@ -505,20 +561,23 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 
 		// 4. 有効な日付範囲内かチェック
 		if (day >= 1 && day <= lastDay) {
-			//カレンダーコントロールの属性を変更
+			//カレンダーコントロールの属性（選択日付）を変更
 			updateBlockAttributes(calendarFromInner?.clientId, {
 				selectedValue: day,
 			});
-			//スロット編集用モーダルの表示
-			setIsModalOpen(true);
+
+			//ブロックを選択状態にする
+			if (!isSelected) {
+				selectBlock(clientId);
+			}
 		}
 	}, [
+		isInitialized,
 		calendarFromInner?.attributes?.selectedMonth,
 		tableFromInner?.attributes?.clickCellPos,
 	]);
 
 	//一月分の枠を一括で登録
-
 	const addMonthSlots = async () => {
 		setMonthNotice({ status: undefined, message: "" });
 
@@ -610,8 +669,11 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			const newUnits: ResourceUnit[] = [];
 			//同じ種類の席数を一括で入力
 			for (let i = 0; i < addNum; i++) {
+				// 3桁で0埋めする（例: 1 -> 001, 12 -> 012）
+				const unitNumber = (newUnits.length + 1).toString().padStart(3, "0");
+
 				newUnits.push({
-					name: `${currentUnit.name} ${newUnits.length + 1}`,
+					name: `${currentUnit.name} ${unitNumber}`,
 					min: currentUnit.min,
 					max: currentUnit.max,
 					// quantity は持たせず、1レコード 1ユニットとして扱う
@@ -713,6 +775,23 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		}
 	};
 
+	//トグルボタンのイベントドリブン
+	const onToggleClosed = (dow: number): void => {
+		const cur: number[] = Array.isArray(closedWeekdays) ? closedWeekdays : [];
+		if (cur.includes(dow)) {
+			setAttributes({ closedWeekdays: cur.filter((x) => x !== dow) });
+		} else {
+			setAttributes({ closedWeekdays: [...cur, dow].sort((a, b) => a - b) });
+		}
+	};
+
+	// tableSourceの変化検知（必要ならもっと軽くしてOK）
+	const tableSig = (arr: TableRow[] | undefined): string =>
+		JSON.stringify(arr || []);
+
+	// ★ コンポーネント外に置かず、Edit 内で useRef で保持
+	const requestSeqRef = useRef<number>(0);
+
 	//テーブルのIdentification ID
 	const tableOptions =
 		displayTables?.map((table) => ({
@@ -724,12 +803,15 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	const unitOptions = [
 		{
 			value: "",
-			label: __("Select a unit to delete", "itmaroon-booking-block"),
+			label: __("Select a unit to delete or edit", "itmaroon-booking-block"),
 		},
-		...unitList.map((unit) => ({
-			value: unit.id?.toString() || "", // IDを文字列にする必要があります
-			label: `${unit.name} (${unit.min}-${unit.max}名)`,
-		})),
+		// unitListをコピーしてソートしてからmapに繋げます
+		...[...unitList]
+			.sort((a, b) => a.name.localeCompare(b.name, "ja")) // 日本語の昇順（あいうえお順）
+			.map((unit) => ({
+				value: unit.id?.toString() || "",
+				label: `${unit.name} (${unit.min}-${unit.max}名)`,
+			})),
 	];
 
 	return (
@@ -745,6 +827,15 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 						options={tableOptions}
 						onChange={(val) => {
 							setAttributes({ calendarTableId: val });
+						}}
+					/>
+
+					<SelectControl
+						label={__("TaimTable Identification", "itmaroon-booking-block")}
+						value={timeTableId}
+						options={tableOptions}
+						onChange={(val) => {
+							setAttributes({ timeTableId: val });
 						}}
 					/>
 
@@ -1023,10 +1114,136 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 
 				{isModalOpen && (
 					<SlotEditModal
+						resourceId={resourceId}
+						selDate={selectedDateYmd || ""}
 						rows={slotRows}
 						onClose={() => setIsModalOpen(false)}
+						onSaveSuccess={() => setLastUpdated(Date.now())} // 保存成功時に現在時刻をセット
 					/>
 				)}
+			</InspectorControls>
+
+			<InspectorControls group="styles">
+				<PanelBody
+					title={__("Calendar settings", "itmaroon-booking-block")}
+					initialOpen={true}
+					className="check_design_ctrl"
+				>
+					<ToggleControl
+						label={__("Show Holiday", "itmaroon-booking-block")}
+						checked={isHoliday}
+						onChange={(newValue: boolean) =>
+							setAttributes({ isHoliday: newValue })
+						}
+					/>
+					<RangeControl
+						value={enoughBorder}
+						label={__("Enough Border", "itmaroon-booking-block")}
+						max={100}
+						min={10}
+						step={10}
+						onChange={(val) => setAttributes({ enoughBorder: val })}
+					/>
+					<PanelColorGradientSettings
+						title={__("Choose Enough Remaind Cell", "itmaroon-booking-block")}
+						settings={[
+							{
+								colorValue: enoughBgColor,
+								gradientValue: emptyGradient,
+
+								label: __("Background color", "itmaroon-booking-block"),
+								onColorChange: (newValue?: string) => {
+									setAttributes({ enoughBgColor: newValue });
+								},
+								onGradientChange: (newValue?: string) => {
+									setAttributes({ emptyGradient: newValue });
+								},
+							},
+						]}
+					/>
+					<PanelColorGradientSettings
+						title={__("Choose Low Remaind Cell", "itmaroon-booking-block")}
+						settings={[
+							{
+								colorValue: lowBgColor,
+								gradientValue: lowGradient,
+
+								label: __("Background color", "itmaroon-booking-block"),
+								onColorChange: (newValue?: string) =>
+									setAttributes({ lowBgColor: newValue }),
+								onGradientChange: (newValue?: string) =>
+									setAttributes({ lowGradient: newValue }),
+							},
+						]}
+					/>
+					<PanelColorGradientSettings
+						title={__("Choose Empty Cell", "itmaroon-booking-block")}
+						settings={[
+							{
+								colorValue: emptyBgColor,
+								gradientValue: emptyGradient,
+
+								label: __("Background color", "itmaroon-booking-block"),
+								onColorChange: (newValue?: string) =>
+									setAttributes({ emptyBgColor: newValue }),
+								onGradientChange: (newValue?: string) =>
+									setAttributes({ emptyGradient: newValue }),
+							},
+						]}
+					/>
+					<PanelColorGradientSettings
+						title={__("Choose Close Cell", "itmaroon-booking-block")}
+						settings={[
+							{
+								colorValue: closeBgColor,
+								gradientValue: closeGradient,
+
+								label: __("Background color", "itmaroon-booking-block"),
+								onColorChange: (newValue?: string) =>
+									setAttributes({ closeBgColor: newValue }),
+								onGradientChange: (newValue?: string) =>
+									setAttributes({ closeGradient: newValue }),
+							},
+						]}
+					/>
+					<RadioControl
+						label={__("Remaind Display type", "itmaroon-booking-block")}
+						selected={remainDisp}
+						options={[
+							{
+								label: __("Number Display", "itmaroon-booking-block"),
+								value: "number",
+							},
+							{
+								label: __("Sign", "itmaroon-booking-block"),
+								value: "sign",
+							},
+						]}
+						onChange={(changeOption) => {
+							setAttributes({ remainDisp: changeOption });
+						}}
+						help={
+							remainDisp === "number"
+								? __(
+										"The remaining number of available reservations will be displayed as a number.",
+										"block-collections",
+								  )
+								: remainDisp === "sign"
+								? __(
+										"The remaining number of available reservations will be displayed as ○✕△.",
+										"block-collections",
+								  )
+								: ""
+						}
+					/>
+					<TextControl
+						label={__("Rest Display", "itmaroon-booking-block")}
+						value={restDisp}
+						onChange={(val) => {
+							setAttributes({ restDisp: val });
+						}}
+					/>
+				</PanelBody>
 			</InspectorControls>
 
 			<div {...innerBlocksProps} />

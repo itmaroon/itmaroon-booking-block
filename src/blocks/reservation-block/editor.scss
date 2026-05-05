@@ -25,6 +25,8 @@
         text-align: center;
     }
     th {
+		white-space: nowrap;
+        vertical-align: middle;
         background: #f0f0f0;
         position: sticky;
         top: 0; // 縦スクロール時にヘッダーを固定
@@ -34,6 +36,13 @@
         left: 0; // 横スクロール時に時間を固定
         background: #f0f0f0;
         font-weight: bold;
+		line-height: 1.2;
+        padding: 4px 8px;
+        min-width: 100px;
+        small {
+            display: block;
+            font-size: 0.85em;
+        }
     }
     .slot-cell {
         cursor: pointer;
