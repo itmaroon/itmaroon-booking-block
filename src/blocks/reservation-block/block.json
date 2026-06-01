@@ -41,6 +41,18 @@
 			"type": "string",
 			"default": ""
 		},
+		"confirmModal":{
+			"type":"string",
+			"default":""
+		},
+		"reserveForm":{
+			"type":"string",
+			"default":""
+		}, 
+		"cancelModForm":{
+			"type":"string",
+			"default":""
+		},  
 		
 		"capacityDefault":{
 			"type":"number",
@@ -49,6 +61,14 @@
 		"closedWeekdays":{
 			"type":"array",
 			"default":[]
+		},
+		"infoMessages":{
+			"type":"object",
+			"default":{}
+		},
+		"dispUniqueIds":{
+			"type":"object",
+			"default":{}
 		},
 		"isHoliday": {
 			"type": "boolean",

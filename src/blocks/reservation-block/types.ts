@@ -2,7 +2,29 @@
 
 /**
  * block.json の定義に基づく属性の型
+ *
  */
+interface InfoMessages {
+	successBooking: string;
+	cancelSuccess: string;
+	changeSuccess: string;
+	noChange: string;
+	errorLogin: string;
+	errorNoSlot: string;
+	errorNoUnit: string;
+	errorFull: string;
+	seetFull: string;
+	errorNoTarget: string;
+	errorInside: string;
+}
+
+interface TargetTite {
+	resourceName: string;
+	guestCount: string;
+	reserveDate: string;
+	reserveTime: string;
+}
+
 export interface BookingAttributes {
 	resourceId: number;
 	resourceSlug: string;
@@ -16,6 +38,11 @@ export interface BookingAttributes {
 	closedWeekdays: number[];
 	confirmThings: unknown[];
 	isHoliday: boolean;
+	infoMessages: InfoMessages;
+	dispUniqueIds: TargetTite;
+	confirmModal: string;
+	reserveForm: string;
+	cancelModForm: string;
 	enoughBorder: number;
 	enoughBgColor: string;
 	enoughGradient: string;
@@ -65,9 +92,11 @@ export interface SlotDetail {
 export interface userBooking {
 	booking_id: number;
 	guest_count: number;
+	slot_ids: string;
 	booking_status: string;
-	slot_date: string;
-	resource_name: string;
+	reserve_date: string;
+	reserve_time: string;
+	end_time: string;
 }
 
 /**
@@ -158,4 +187,11 @@ export interface BulkResult {
 export interface HolidayData {
 	date: string;
 	name: string;
+}
+
+//予約の結果を返す型
+export interface BookingResponse {
+	success: boolean;
+	// info_code は InfoMessages のキーのいずれかであることを保証する
+	info_code: keyof InfoMessages;
 }

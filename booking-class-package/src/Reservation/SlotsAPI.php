@@ -13,7 +13,7 @@ use WP_REST_Request;
 use WP_REST_Server;
 use WP_REST_Response;
 
-final class SlotsAPI
+final class SlotsAPI extends BaseReserve
 {
     const VERSION = '1.0.0';
 
@@ -218,17 +218,6 @@ final class SlotsAPI
         }
     }
 
-    public static function can_manage_slots(WP_REST_Request $request): bool
-    {
-        /**
-         * 権限は運用に合わせて変更してください。
-         * - manage_options: 管理者のみ
-         * - edit_posts: 編集者も可
-         */
-        $cap = apply_filters('itmar_reservation_slots_manage_cap', 'manage_options', $request);
-        return current_user_can($cap);
-    }
-
 
     private static function validate_date_yyyy_mm_dd(string $date): bool
     {
@@ -237,12 +226,6 @@ final class SlotsAPI
         }
         [$y, $m, $d] = array_map('intval', explode('-', $date));
         return checkdate($m, $d, $y);
-    }
-
-    private static function normalize_status(?string $status): string
-    {
-        $status = strtolower((string)$status);
-        return in_array($status, ['open', 'closed', 'holiday'], true) ? $status : 'open';
     }
 
     public static function list_slots(WP_REST_Request $request)
@@ -629,7 +612,7 @@ final class SlotsAPI
         if (empty($resource_id) || !is_array($units)) {
             return new \WP_REST_Response([
                 'success' => false,
-                'message' => 'Invalid data provided.'
+                'message' => __('Invalid data provided.', 'itmaroon-booking-block')
             ], 400);
         }
 
@@ -639,13 +622,13 @@ final class SlotsAPI
         if ($result) {
             return new \WP_REST_Response([
                 'success' => true,
-                'message' => 'Units saved successfully.',
+                'message' => __('Units saved successfully.', 'itmaroon-booking-block'),
                 'data'    => $units
             ], 200);
         } else {
             return new \WP_REST_Response([
                 'success' => false,
-                'message' => 'Database error occurred.'
+                'message' => __('Database error occurred.', 'itmaroon-booking-block')
             ], 500);
         }
     }
@@ -665,7 +648,7 @@ final class SlotsAPI
         $max  = absint($request->get_param('max'));
 
         if (empty($name)) {
-            return new \WP_REST_Response(['success' => false, 'message' => 'Name is required.'], 400);
+            return new \WP_REST_Response(['success' => false, 'message' => __('Name is required.', 'itmaroon-booking-block')], 400);
         }
 
         $result = $wpdb->update(
@@ -683,10 +666,10 @@ final class SlotsAPI
 
         // $result は影響を受けた行数（変更がない場合は 0 が返ることもあるので注意）
         if ($result !== false) {
-            return new \WP_REST_Response(['success' => true, 'message' => 'Unit updated.'], 200);
+            return new \WP_REST_Response(['success' => true, 'message' => __('Unit updated.', "itmaroon-booking-block")], 200);
         }
 
-        return new \WP_REST_Response(['success' => false, 'message' => 'Update failed.'], 500);
+        return new \WP_REST_Response(['success' => false, 'message' => __('Update failed.', "itmaroon-booking-block")], 500);
     }
 
     /**
@@ -719,10 +702,10 @@ final class SlotsAPI
         $result = $wpdb->delete($table_units, ['id' => $id], ['%d']);
 
         if ($result !== false) {
-            return new \WP_REST_Response(['success' => true, 'message' => 'ユニットと関連する枠を削除しました。'], 200);
+            return new \WP_REST_Response(['success' => true, 'message' => __('The frame associated with the unit has been removed.', "itmaroon-booking-block")], 200);
         }
 
-        return new \WP_REST_Response(['success' => false, 'message' => 'DBエラーが発生しました。'], 500);
+        return new \WP_REST_Response(['success' => false, 'message' => __('A database error occurred.', "itmaroon-booking-block")], 500);
     }
 
     //スロット詳細を編集するメソッド

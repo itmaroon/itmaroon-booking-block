@@ -563,7 +563,7 @@ const buildTimeTableSource = (dailyStats, renderStyle) => {
 };
 const buildBookingListTableSource = (bookings, {
   renderActions // キャンセルボタンなどを描画するコールバック
-}) => {
+}, showCheckbox = false) => {
   if (!Array.isArray(bookings) || bookings.length === 0) {
     // データがない場合は「予約がありません」という1行を返す
     return [{
@@ -580,24 +580,40 @@ const buildBookingListTableSource = (bookings, {
 
   // データ行
   bookings.forEach(booking => {
-    tableSource.push({
-      cells: [{
+    // 1. まず日付セルを入れた配列を作成
+    const cells = [{
+      tag: "td",
+      content: booking.reserve_date
+    }];
+    // 2. 時間を表示すべきリソースか判定して push する
+    // ここで is_time_resource（仮）などのフラグで判定
+    if (!(booking.reserve_time === "00:00:00" && booking.end_time === "23:59:59")) {
+      cells.push({
         tag: "td",
-        content: booking.slot_date
-      }, {
-        tag: "td",
-        content: booking.resource_name
-      }, {
-        tag: "td",
-        content: `${booking.guest_count} 名`
-      }, {
-        tag: "td",
-        content: renderActions(booking),
+        content: `${booking.reserve_time.substring(0, 5)}～${booking.end_time.substring(0, 5)}`,
         attributes: {
-          "data-booking-id": booking.booking_id,
-          "data-status": booking.booking_status
+          class: "reservation_time_cell" // ここにクラス名を追加
         }
-      }]
+      });
+    }
+
+    // 3. 残りのセルを push
+    cells.push({
+      tag: "td",
+      content: `${booking.guest_count} 名`
+    }, {
+      tag: "td",
+      content: renderActions(booking, showCheckbox),
+      attributes: {
+        "data-booking-id": booking.booking_id,
+        "data-slot-ids": booking.slot_ids,
+        "data-status": booking.booking_status,
+        "data-reserve-date": booking.reserve_date,
+        "data-guest-count": booking.guest_count
+      }
+    });
+    tableSource.push({
+      cells
     });
   });
   return tableSource;
@@ -622,10 +638,24 @@ const renderBookingCellHtml = (dayObj, dayNum, renderStyle) => {
         </div>
 	`.trim();
 };
-const renderCancelButtonHtml = booking => {
+const renderCancelButtonHtml = (booking, showCheckbox = false) => {
   // 既にキャンセル済みの場合はボタンを出さない、または無効化する
   if (booking.booking_status === "cancelled") {
-    return `<span style="color: #999;">キャンセル済み</span>`;
+    let html = `<span style="color: #999;">キャンセル済み</span>`;
+
+    // 管理者モード等で、右側にチェックボックスを配置
+    if (showCheckbox) {
+      html += ` 
+				<input 
+					type="checkbox" 
+					class="itmar-delete-checkbox" 
+					value="${booking.booking_id}" 
+					style="margin-left: 8px; vertical-align: middle; cursor: pointer;"
+					onclick="event.stopPropagation();" 
+				>
+			`;
+    }
+    return html.trim();
   }
   return `
         <button 
@@ -633,7 +663,7 @@ const renderCancelButtonHtml = booking => {
             class="itmar-cancel-button" 
             style="background:#e53935; color:#fff; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;"
         >
-            キャンセル
+            変更・キャンセル
         </button>
     `.trim();
 };
@@ -720,7 +750,11 @@ function Edit(props) {
     bookingTableId,
     timeTableId,
     closedWeekdays,
-    confirmThings,
+    infoMessages,
+    dispUniqueIds,
+    confirmModal,
+    reserveForm,
+    cancelModForm,
     isHoliday,
     enoughBorder,
     enoughBgColor,
@@ -767,13 +801,19 @@ function Edit(props) {
     const timeTable = allBlocks.find(b => b.name === "itmar/design-table" && b.attributes?.defineID === timeTableId);
     const reservatedTable = allBlocks.find(b => b.name === "itmar/design-table" && b.attributes?.defineID === bookingTableId);
     const displayTables = allBlocks.filter(b => b.name === "itmar/design-table");
+    const targetTitle = allBlocks.filter(b => b.name === "itmar/design-title" && b.attributes?.uniqueID);
+    const targetGroup = allBlocks.filter(b => b.name === "itmar/design-group" && b.attributes?.formID);
+    const targetInput = allBlocks.filter(b => b.name === "itmar/design-text-ctrl" && b.attributes?.inputName);
     return {
       innerBlocksData: {
         calendarFromInner: calendarBlock || null,
         tableFromInner: calendarTable || null,
         timeFromInner: timeTable || null,
         reservatedInner: reservatedTable || null,
-        displayTables: displayTables || null
+        displayTables: displayTables || null,
+        targetTitleBlock: targetTitle || null,
+        targetGroupBlock: targetGroup || null,
+        targetInputBlock: targetInput || null
       }
     };
   }, [clientId, calendarTableId, bookingTableId]);
@@ -784,7 +824,10 @@ function Edit(props) {
     tableFromInner,
     timeFromInner,
     reservatedInner,
-    displayTables
+    displayTables,
+    targetTitleBlock,
+    targetGroupBlock,
+    targetInputBlock
   } = innerBlocksData;
 
   //カレンダーテーブルで選択された年月日
@@ -794,6 +837,9 @@ function Edit(props) {
 
   //枠を作る日付を生成
   const pad2 = n => String(n).padStart(2, "0");
+
+  //iframeの取得のための参照
+  const containerRef = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useRef)(null);
 
   // 週休日のセット
   const closedSet = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => new Set(closedWeekdays ?? []), [closedWeekdays]);
@@ -807,17 +853,42 @@ function Edit(props) {
     return (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_7__.generateMonthCalendar)(selectedMonth).filter(d => !closedSet.has(Number(d.weekday))).map(d => `${year}-${pad2(month)}-${pad2(Number(d.date))}`); // "YYYY-MM-DD"
   }, [calendarFromInner?.attributes?.selectedMonth, closedSet]);
 
+  // 予約レコード削除のチェックボックスがクリックされた時に呼ぶ関数
+  const onTableClick = e => {
+    const target = e.target;
+
+    // クリックされたのがチェックボックスだったら
+    if (target.classList.contains("itmar-delete-checkbox")) {
+      // 1. 現在のチェック状態を一時的に保持
+      const isChecked = target.checked;
+      const targetValue = target.value;
+
+      // 2.ブロックを選択状態にする
+      selectBlock(reservatedInner?.clientId);
+      // 3. 次のレンダリングサイクルでチェックを強制的に戻す
+      setTimeout(() => {
+        if (containerRef.current) {
+          const blockDocument = containerRef.current.ownerDocument;
+          // Valueなどをキーに、再描画された後の新しいDOM要素を探す
+          const checkbox = blockDocument.querySelector(`.itmar-delete-checkbox[value="${targetValue}"]`);
+          if (checkbox) {
+            checkbox.checked = isChecked;
+            // 必要に応じて change イベントを発火させておく
+            checkbox.dispatchEvent(new Event("change", {
+              bubbles: true
+            }));
+          }
+        }
+      }, 0);
+    }
+  };
+
   // =====状態変数 =====
   const [isInitialized, setIsInitialized] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(false); // 初期化完了フラグ
 
   const [lastUpdated, setLastUpdated] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(Date.now()); // 保存が成功するたびに更新するカウンター
   const [dayLoading, setDayLoading] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(false);
-  const [dayError, setDayError] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)("");
   const [slotRows, setSlotRows] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)([]);
-  const [dayNotice, setDayNotice] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)({
-    status: undefined,
-    message: ""
-  });
   const [monthSaving, setMonthSaving] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(false);
   const [monthNotice, setMonthNotice] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)({
     status: undefined,
@@ -825,10 +896,7 @@ function Edit(props) {
   });
   const [unitSaving, setUnitSaving] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(false);
   const [addNum, setAddnum] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)(1);
-  const [unitNotice, setUnitNotice] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)({
-    status: undefined,
-    message: ""
-  });
+
   //unitの管理ステート
 
   const [currentUnit, setCurrentUnit] = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useState)({
@@ -855,22 +923,25 @@ function Edit(props) {
 
   //各ブロックの初期化
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
-    if (!isInitialized && calendarFromInner && timeFromInner && tableFromInner) {
+    if (!isInitialized && calendarFromInner && tableFromInner) {
       // 命令を出す（ここでのawaitは、あくまで命令の送信完了まで）
       updateBlockAttributes(calendarFromInner.clientId, {
         selectedValue: 0
-      });
-      updateBlockAttributes(timeFromInner.clientId, {
-        tableSource: []
       });
       updateBlockAttributes(tableFromInner.clientId, {
         clickCellPos: {}
       });
     }
+    //時間テーブルがない場合は初期化しない
+    if (!isInitialized && timeFromInner) {
+      updateBlockAttributes(timeFromInner.clientId, {
+        tableSource: []
+      });
+    }
   }, [isInitialized, calendarFromInner?.clientId, timeFromInner?.clientId, tableFromInner?.clientId]);
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
     // すべての値が「初期値」に戻ったことを確認できたら、初めて準備完了とする
-    const isReset = calendarFromInner?.attributes?.selectedValue === 0 && timeFromInner?.attributes?.tableSource?.length === 0 && Object.keys(tableFromInner?.attributes?.clickCellPos || {}).length === 0;
+    const isReset = calendarFromInner?.attributes?.selectedValue === 0 && (!timeFromInner || timeFromInner?.attributes?.tableSource?.length === 0) && Object.keys(tableFromInner?.attributes?.clickCellPos || {}).length === 0;
     if (isReset && !isInitialized) {
       setIsInitialized(true);
     }
@@ -883,12 +954,6 @@ function Edit(props) {
   // 選択日 or resourceId が変わったら、その日の slot を DB から取得
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
     const fetchDaySlot = async () => {
-      setDayError("");
-      setDayNotice({
-        status: undefined,
-        message: ""
-      });
-
       // 条件が揃わないなら終了
       if (!resourceId || !selectedDateYmd) {
         return;
@@ -904,7 +969,7 @@ function Edit(props) {
         setSlotRows(rows);
       } catch (e) {
         const error = e;
-        setDayError(error?.message ?? (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Failed to load selected day slot.", "itmaroon-booking-block"));
+        console.error(error?.message ?? (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Failed to load selected day slot.", "itmaroon-booking-block"));
       } finally {
         setDayLoading(false);
       }
@@ -951,6 +1016,7 @@ function Edit(props) {
       });
 
       // 途中で月が切り替わっていたら破棄
+
       if (mySeq !== requestSeqRef.current) return;
 
       //カレンダーテーブルレンダリング用のデータを生成
@@ -960,6 +1026,7 @@ function Edit(props) {
       setDailyStatsMap(calendarInfoObj.dailyStats);
 
       //テーブル表示用のソースを生成
+
       const booking_data = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_9__.buildCalendarTableSource)(calendarFromInner?.attributes?.selectedMonth, calendarInfoObj.dataVal, {
         isMonday: false,
         renderCell: _createTableSource__WEBPACK_IMPORTED_MODULE_9__.renderBookingCellHtml,
@@ -987,7 +1054,7 @@ function Edit(props) {
 
     // エラーは握りつぶさずログ（必要なら Notice 表示に変更）
     runSlotDataGet().catch(e => console.error("sync slots -> calendar dateValues failed:", e));
-  }, [isInitialized, calendarFromInner?.clientId, resourceId, tableFromInner?.clientId, reservatedInner?.clientId, lastUpdated, isHoliday, enoughBorder, enoughBgColor, enoughGradient, lowBgColor, lowGradient, emptyBgColor, emptyGradient, closeBgColor, closeGradient, remainDisp, restDisp]);
+  }, [isInitialized, calendarFromInner?.clientId, calendarFromInner?.attributes, resourceId, tableFromInner?.clientId, reservatedInner?.clientId, lastUpdated, isHoliday, enoughBorder, enoughBgColor, enoughGradient, lowBgColor, lowGradient, emptyBgColor, emptyGradient, closeBgColor, closeGradient, remainDisp, restDisp]);
 
   //時間別のテーブルレンダリング
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
@@ -1028,7 +1095,7 @@ function Edit(props) {
     const runReservationDataGet = async () => {
       if (!reservatedInner) return;
       if (!resourceId) return;
-      const path = "/itmar/v1/get_user_bookings";
+      const path = `/itmar/v1/get_user_bookings?resource_id=${resourceId}`;
       const bookings = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_5___default()({
         path
       });
@@ -1036,7 +1103,7 @@ function Edit(props) {
       // 予約一覧用の Source を作成
       const reservation_data = (0,_createTableSource__WEBPACK_IMPORTED_MODULE_9__.buildBookingListTableSource)(bookings, {
         renderActions: _createTableSource__WEBPACK_IMPORTED_MODULE_9__.renderCancelButtonHtml
-      });
+      }, true);
 
       // ★ 変化があるときだけ tableSource 更新（無限更新防止）
       const prev = reservatedInner.attributes?.tableSource ?? [];
@@ -1048,9 +1115,82 @@ function Edit(props) {
       }
     };
 
+    // containerRef.current が属している document (iframe内) を取得
+    const blockDocument = containerRef.current?.ownerDocument;
+    const blockWrapper = blockDocument?.getElementById(`block-${reservatedInner?.clientId}`);
+    //削除実行ボタンを配置
+    if (blockWrapper) {
+      // そのブロック内にあるテーブルの、最後のthを特定
+      const lastTh = blockWrapper.querySelector("thead th:last-child");
+
+      // 二重追加防止：既にボタンがないか確認
+      if (lastTh && !lastTh.querySelector("#itmar-bulk-delete-button")) {
+        const btn = document.createElement("button");
+        btn.id = "itmar-bulk-delete-button";
+        btn.type = "button";
+        btn.innerText = "削除実行";
+
+        // デザイン調整（インラインでスッキリ配置）
+        Object.assign(btn.style, {
+          background: "#db4949",
+          color: "#fff",
+          border: "none",
+          padding: "2px 8px",
+          borderRadius: "3px",
+          cursor: "pointer",
+          fontSize: "11px",
+          marginLeft: "8px",
+          verticalAlign: "middle"
+        });
+
+        // 削除実行ボタンのクリックイベント
+        btn.addEventListener("click", async e => {
+          // クリックイベントが親要素（詳細表示など）に伝播しないようにガード
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          // チェックされているIDを収集
+          const checkedInputs = blockWrapper.querySelectorAll(".itmar-delete-checkbox:checked");
+          const bookingIds = Array.from(checkedInputs).map(input => input.value);
+          if (bookingIds.length === 0) {
+            alert((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Please check the data you want to delete.", "itmaroon-booking-block"));
+            return;
+          }
+          const confirmMessage = (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.sprintf)(/* translators: %d: 削除する件数 */
+          (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Do you want to completely delete %d data items? \nThis operation cannot be undone.", "itmaroon-booking-block"), bookingIds.length);
+          if (!confirm(confirmMessage)) {
+            return;
+          }
+
+          // 戻り値の型定義
+
+          try {
+            const result = await _wordpress_api_fetch__WEBPACK_IMPORTED_MODULE_5___default()({
+              path: "/itmar/v1/bookings",
+              method: "DELETE",
+              data: {
+                ids: bookingIds
+              }
+            });
+            if (result.success) {
+              alert(result.message);
+              // bookingsデータを再取得して画面を更新
+              setIsInitialized(false);
+            }
+          } catch (error) {
+            // apiFetchはHTTPエラー時に例外を投げるため、ここでキャッチ
+            console.error("Delete failed:", error.message);
+            alert((0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Deletion failed.", "itmaroon-booking-block"));
+          }
+        });
+        lastTh.appendChild(btn);
+      }
+    }
+
     // エラーは握りつぶさずログ（必要なら Notice 表示に変更）
     runReservationDataGet().catch(e => console.error("get reservation -> get reservation data failed:", e));
-  }, [resourceId, reservatedInner?.clientId]);
+  }, [isInitialized, resourceId, reservatedInner?.clientId]);
 
   //予定表上のテーブルをクリックしたときの処理
   (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useEffect)(() => {
@@ -1298,6 +1438,83 @@ function Edit(props) {
     value: unit.id?.toString() || "",
     label: `${unit.name} (${unit.min}-${unit.max}名)`
   }))];
+
+  // 予約情報表示のブロックを選択するためのオプション
+
+  const targetBlocks = [...(targetTitleBlock || []), ...(targetInputBlock || [])];
+  const titleBlockOptions = [{
+    label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Please Select...", "itmaroon-booking-block"),
+    value: ""
+  }, ...targetBlocks.reduce((acc, block) => {
+    const {
+      uniqueID,
+      inputName
+    } = block.attributes;
+
+    // ラベルの決定（Title系ならresourceName、Input系ならinputName）
+    const label = uniqueID || inputName;
+    const valueId = uniqueID || inputName;
+
+    // 識別子がない、または既に同じラベルが登録済みの場合はスキップ
+    if (!valueId || !label || acc.some(option => option.label === label)) {
+      return acc;
+    }
+
+    // オプションを追加
+    acc.push({
+      label: label,
+      value: JSON.stringify({
+        type: block.name,
+        id: valueId
+      })
+    });
+    return acc;
+  }, [])];
+  const modalBlockOptions = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => [{
+    label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Please Select...", "itmaroon-booking-block"),
+    value: ""
+  }, ...targetGroupBlock.reduce((acc, block) => {
+    const {
+      formID
+    } = block.attributes;
+
+    // ラベルの決定（Title系ならresourceName、Input系ならinputName）
+    const label = formID;
+    const valueId = formID;
+
+    // 識別子がない、または既に同じラベルが登録済みの場合はスキップ
+    if (!valueId || !label || acc.some(option => option.label === label)) {
+      return acc;
+    }
+
+    // オプションを追加
+    acc.push({
+      label: label,
+      value: valueId
+    });
+    return acc;
+  }, [])], targetGroupBlock);
+  const confirmFormOptions = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => {
+    const modalInner = targetGroupBlock.find(b => b.attributes?.formID === confirmModal)?.innerBlocks;
+    const inputFigure = modalInner ? (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_8__.flattenBlocks)(modalInner).filter(b => b.name === "itmar/input-figure-block" && b.attributes.form_name) : [];
+    const confirmFormOptions = [{
+      label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Please Select...", "itmaroon-booking-block"),
+      value: ""
+    }, ...inputFigure.reduce((acc, block) => {
+      const {
+        form_name
+      } = block.attributes;
+      if (!form_name || acc.some(option => option.label === form_name)) {
+        return acc;
+      }
+      acc.push({
+        label: form_name,
+        value: form_name
+      });
+      return acc;
+    }, [])];
+    return confirmFormOptions;
+  }, [targetGroupBlock, confirmModal]);
   return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.Fragment, {
     children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.InspectorControls, {
       children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.PanelBody, {
@@ -1554,12 +1771,218 @@ function Edit(props) {
           },
           children: [(0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Dates to be created:", "itmaroon-booking-block"), " ", datesToCreate.length]
         })]
-      }), isModalOpen && /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_SlotEditModal__WEBPACK_IMPORTED_MODULE_10__["default"], {
-        resourceId: resourceId,
-        selDate: selectedDateYmd || "",
-        rows: slotRows,
-        onClose: () => setIsModalOpen(false),
-        onSaveSuccess: () => setLastUpdated(Date.now()) // 保存成功時に現在時刻をセット
+      }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.PanelBody, {
+        title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("User setteing Display Disp", "itmaroon-booking-block"),
+        initialOpen: true,
+        children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.PanelBody, {
+          title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Setting Confirm Modal", "itmaroon-booking-block"),
+          initialOpen: true,
+          children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Modal ID", "itmaroon-booking-block"),
+            value: confirmModal,
+            options: modalBlockOptions,
+            onChange: val => {
+              setAttributes({
+                confirmModal: val
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Reserve Form", "itmaroon-booking-block"),
+            value: reserveForm,
+            options: confirmFormOptions,
+            onChange: val => {
+              setAttributes({
+                reserveForm: val
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Cancel Modify Form", "itmaroon-booking-block"),
+            value: cancelModForm,
+            options: confirmFormOptions,
+            onChange: val => {
+              setAttributes({
+                cancelModForm: val
+              });
+            }
+          })]
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.PanelBody, {
+          title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Message Content", "itmaroon-booking-block"),
+          initialOpen: false,
+          children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Success Booking", "itmaroon-booking-block"),
+            value: infoMessages.successBooking,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  successBooking: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Success Cancel Booking", "itmaroon-booking-block"),
+            value: infoMessages.cancelSuccess,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  cancelSuccess: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Success Booking Change", "itmaroon-booking-block"),
+            value: infoMessages.changeSuccess,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  changeSuccess: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Booking No Change", "itmaroon-booking-block"),
+            value: infoMessages.noChange,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  noChange: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Login Error", "itmaroon-booking-block"),
+            value: infoMessages.errorLogin,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  errorLogin: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Day Slot Nothing", "itmaroon-booking-block"),
+            value: infoMessages.errorNoSlot,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  errorNoSlot: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Enough Slot Nothing", "itmaroon-booking-block"),
+            value: infoMessages.errorNoUnit,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  errorNoUnit: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("The Day Full ", "itmaroon-booking-block"),
+            value: infoMessages.errorFull,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  errorFull: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Reserve Seet Full ", "itmaroon-booking-block"),
+            value: infoMessages.seetFull,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  seetFull: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Target Nothing", "itmaroon-booking-block"),
+            value: infoMessages.errorNoTarget,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  errorNoTarget: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.TextControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Inside Error", "itmaroon-booking-block"),
+            value: infoMessages.errorInside,
+            onChange: val => {
+              setAttributes({
+                infoMessages: {
+                  ...infoMessages,
+                  errorInside: val
+                }
+              });
+            }
+          })]
+        }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.PanelBody, {
+          title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Setting Target Title", "itmaroon-booking-block"),
+          initialOpen: false,
+          children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Resource Name", "itmaroon-booking-block"),
+            value: dispUniqueIds.resourceName,
+            options: titleBlockOptions,
+            onChange: val => {
+              setAttributes({
+                dispUniqueIds: {
+                  ...dispUniqueIds,
+                  resourceName: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Guest Count", "itmaroon-booking-block"),
+            value: dispUniqueIds.guestCount,
+            options: titleBlockOptions,
+            onChange: val => {
+              setAttributes({
+                dispUniqueIds: {
+                  ...dispUniqueIds,
+                  guestCount: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Reserve Date", "itmaroon-booking-block"),
+            value: dispUniqueIds.reserveDate,
+            options: titleBlockOptions,
+            onChange: val => {
+              setAttributes({
+                dispUniqueIds: {
+                  ...dispUniqueIds,
+                  reserveDate: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Guest Count", "itmaroon-booking-block"),
+            value: dispUniqueIds.reserveTime,
+            options: titleBlockOptions,
+            onChange: val => {
+              setAttributes({
+                dispUniqueIds: {
+                  ...dispUniqueIds,
+                  reserveTime: val
+                }
+              });
+            }
+          })]
+        })]
       })]
     }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.InspectorControls, {
       group: "styles",
@@ -1664,8 +2087,16 @@ function Edit(props) {
           }
         })]
       })
+    }), isModalOpen && /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_SlotEditModal__WEBPACK_IMPORTED_MODULE_10__["default"], {
+      resourceId: resourceId,
+      selDate: selectedDateYmd || "",
+      rows: slotRows,
+      onClose: () => setIsModalOpen(false),
+      onSaveSuccess: () => setLastUpdated(Date.now()) // 保存成功時に現在時刻をセット
     }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)("div", {
-      ...innerBlocksProps
+      ...innerBlocksProps,
+      ref: containerRef,
+      onClickCapture: onTableClick
     })]
   });
 }
@@ -2815,7 +3246,7 @@ let nanoid = (size = 21) => {
   \*************************************************/
 (module) {
 
-module.exports = /*#__PURE__*/JSON.parse('{"$schema":"https://schemas.wp.org/trunk/block.json","apiVersion":3,"name":"itmar/reservation-block","version":"0.1.0","title":"RESERVATION BLOCK","category":"widgets","supports":{"html":false},"attributes":{"resourceId":{"type":"number","default":0},"resourceSlug":{"type":"string","default":""},"resourceRest":{"type":"string","default":""},"selectedSlug":{"type":"string","default":""},"selectedRest":{"type":"string","default":""},"calendarTableId":{"type":"string","default":""},"timeTableId":{"type":"string","default":""},"bookingTableId":{"type":"string","default":""},"capacityDefault":{"type":"number","default":1},"closedWeekdays":{"type":"array","default":[]},"isHoliday":{"type":"boolean","default":false},"enoughBorder":{"type":"number","default":30},"enoughBgColor":{"type":"string"},"enoughGradient":{"type":"string"},"lowBgColor":{"type":"string"},"lowGradient":{"type":"string"},"emptyBgColor":{"type":"string"},"emptyGradient":{"type":"string"},"closeBgColor":{"type":"string"},"closeGradient":{"type":"string"},"remainDisp":{"type":"string","default":"number"},"restDisp":{"type":"string","default":"Close"},"confirmThings":{"type":"array","default":[]},"lastClickedCell":{"type":"object","default":null}},"textdomain":"itmaroon-booking-block","editorScript":"file:./index.js","editorStyle":"file:./index.css","style":"file:./style-index.css","viewScript":"file:./view.js"}');
+module.exports = /*#__PURE__*/JSON.parse('{"$schema":"https://schemas.wp.org/trunk/block.json","apiVersion":3,"name":"itmar/reservation-block","version":"0.1.0","title":"RESERVATION BLOCK","category":"widgets","supports":{"html":false},"attributes":{"resourceId":{"type":"number","default":0},"resourceSlug":{"type":"string","default":""},"resourceRest":{"type":"string","default":""},"selectedSlug":{"type":"string","default":""},"selectedRest":{"type":"string","default":""},"calendarTableId":{"type":"string","default":""},"timeTableId":{"type":"string","default":""},"bookingTableId":{"type":"string","default":""},"confirmModal":{"type":"string","default":""},"reserveForm":{"type":"string","default":""},"cancelModForm":{"type":"string","default":""},"capacityDefault":{"type":"number","default":1},"closedWeekdays":{"type":"array","default":[]},"infoMessages":{"type":"object","default":{}},"dispUniqueIds":{"type":"object","default":{}},"isHoliday":{"type":"boolean","default":false},"enoughBorder":{"type":"number","default":30},"enoughBgColor":{"type":"string"},"enoughGradient":{"type":"string"},"lowBgColor":{"type":"string"},"lowGradient":{"type":"string"},"emptyBgColor":{"type":"string"},"emptyGradient":{"type":"string"},"closeBgColor":{"type":"string"},"closeGradient":{"type":"string"},"remainDisp":{"type":"string","default":"number"},"restDisp":{"type":"string","default":"Close"},"confirmThings":{"type":"array","default":[]},"lastClickedCell":{"type":"object","default":null}},"textdomain":"itmaroon-booking-block","editorScript":"file:./index.js","editorStyle":"file:./index.css","style":"file:./style-index.css","viewScript":"file:./view.js"}');
 
 /***/ }
 

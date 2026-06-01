@@ -1,4 +1,4 @@
-import { __ } from "@wordpress/i18n";
+import { __, sprintf } from "@wordpress/i18n";
 import { BlockEditProps, TemplateArray } from "@wordpress/blocks";
 import { store as blockEditorStore } from "@wordpress/block-editor";
 import type {
@@ -79,7 +79,11 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		bookingTableId,
 		timeTableId,
 		closedWeekdays,
-		confirmThings,
+		infoMessages,
+		dispUniqueIds,
+		confirmModal,
+		reserveForm,
+		cancelModForm,
 		isHoliday,
 		enoughBorder,
 		enoughBgColor,
@@ -151,6 +155,19 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				(b: any) => b.name === "itmar/design-table",
 			);
 
+			const targetTitle = allBlocks.filter(
+				(b: any) => b.name === "itmar/design-title" && b.attributes?.uniqueID,
+			);
+
+			const targetGroup = allBlocks.filter(
+				(b: any) => b.name === "itmar/design-group" && b.attributes?.formID,
+			);
+
+			const targetInput = allBlocks.filter(
+				(b: any) =>
+					b.name === "itmar/design-text-ctrl" && b.attributes?.inputName,
+			);
+
 			return {
 				innerBlocksData: {
 					calendarFromInner: calendarBlock || null,
@@ -158,6 +175,9 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 					timeFromInner: timeTable || null,
 					reservatedInner: reservatedTable || null,
 					displayTables: displayTables || null,
+					targetTitleBlock: targetTitle || null,
+					targetGroupBlock: targetGroup || null,
+					targetInputBlock: targetInput || null,
 				},
 			};
 		},
@@ -171,6 +191,9 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		timeFromInner,
 		reservatedInner,
 		displayTables,
+		targetTitleBlock,
+		targetGroupBlock,
+		targetInputBlock,
 	} = innerBlocksData;
 
 	//カレンダーテーブルで選択された年月日
@@ -186,6 +209,9 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 
 	//枠を作る日付を生成
 	const pad2 = (n: number) => String(n).padStart(2, "0");
+
+	//iframeの取得のための参照
+	const containerRef = useRef<HTMLDivElement>(null);
 
 	// 週休日のセット
 	const closedSet = useMemo<Set<number>>(
@@ -207,17 +233,44 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			.map((d) => `${year}-${pad2(month)}-${pad2(Number(d.date))}`); // "YYYY-MM-DD"
 	}, [calendarFromInner?.attributes?.selectedMonth, closedSet]);
 
+	// 予約レコード削除のチェックボックスがクリックされた時に呼ぶ関数
+	const onTableClick = (e: React.MouseEvent) => {
+		const target = e.target as HTMLInputElement;
+
+		// クリックされたのがチェックボックスだったら
+		if (target.classList.contains("itmar-delete-checkbox")) {
+			// 1. 現在のチェック状態を一時的に保持
+			const isChecked = target.checked;
+			const targetValue = target.value;
+
+			// 2.ブロックを選択状態にする
+			selectBlock(reservatedInner?.clientId);
+			// 3. 次のレンダリングサイクルでチェックを強制的に戻す
+			setTimeout(() => {
+				if (containerRef.current) {
+					const blockDocument = containerRef.current.ownerDocument;
+					// Valueなどをキーに、再描画された後の新しいDOM要素を探す
+					const checkbox = blockDocument.querySelector(
+						`.itmar-delete-checkbox[value="${targetValue}"]`,
+					) as HTMLInputElement;
+
+					if (checkbox) {
+						checkbox.checked = isChecked;
+						// 必要に応じて change イベントを発火させておく
+						checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+					}
+				}
+			}, 0);
+		}
+	};
+
 	// =====状態変数 =====
 	const [isInitialized, setIsInitialized] = useState(false); // 初期化完了フラグ
 
 	const [lastUpdated, setLastUpdated] = useState(Date.now()); // 保存が成功するたびに更新するカウンター
 	const [dayLoading, setDayLoading] = useState<boolean>(false);
-	const [dayError, setDayError] = useState<string>("");
+
 	const [slotRows, setSlotRows] = useState<SlotDetail[]>([]);
-	const [dayNotice, setDayNotice] = useState<{
-		status: "error" | "success" | "warning" | "info" | undefined;
-		message: string;
-	}>({ status: undefined, message: "" });
 
 	const [monthSaving, setMonthSaving] = useState<boolean>(false);
 	const [monthNotice, setMonthNotice] = useState<{
@@ -226,10 +279,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	}>({ status: undefined, message: "" });
 	const [unitSaving, setUnitSaving] = useState<boolean>(false);
 	const [addNum, setAddnum] = useState<number>(1);
-	const [unitNotice, setUnitNotice] = useState<{
-		status: "error" | "success" | "warning" | "info" | undefined;
-		message: string;
-	}>({ status: undefined, message: "" });
+
 	//unitの管理ステート
 	interface ResourceUnit {
 		id?: number;
@@ -268,16 +318,15 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 
 	//各ブロックの初期化
 	useEffect(() => {
-		if (
-			!isInitialized &&
-			calendarFromInner &&
-			timeFromInner &&
-			tableFromInner
-		) {
+		if (!isInitialized && calendarFromInner && tableFromInner) {
 			// 命令を出す（ここでのawaitは、あくまで命令の送信完了まで）
 			updateBlockAttributes(calendarFromInner.clientId, { selectedValue: 0 });
-			updateBlockAttributes(timeFromInner.clientId, { tableSource: [] });
+
 			updateBlockAttributes(tableFromInner.clientId, { clickCellPos: {} });
+		}
+		//時間テーブルがない場合は初期化しない
+		if (!isInitialized && timeFromInner) {
+			updateBlockAttributes(timeFromInner.clientId, { tableSource: [] });
 		}
 	}, [
 		isInitialized,
@@ -289,7 +338,8 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		// すべての値が「初期値」に戻ったことを確認できたら、初めて準備完了とする
 		const isReset =
 			calendarFromInner?.attributes?.selectedValue === 0 &&
-			timeFromInner?.attributes?.tableSource?.length === 0 &&
+			(!timeFromInner ||
+				timeFromInner?.attributes?.tableSource?.length === 0) &&
 			Object.keys(tableFromInner?.attributes?.clickCellPos || {}).length === 0;
 
 		if (isReset && !isInitialized) {
@@ -308,9 +358,6 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	// 選択日 or resourceId が変わったら、その日の slot を DB から取得
 	useEffect(() => {
 		const fetchDaySlot = async (): Promise<void> => {
-			setDayError("");
-			setDayNotice({ status: undefined, message: "" });
-
 			// 条件が揃わないなら終了
 			if (!resourceId || !selectedDateYmd) {
 				return;
@@ -330,7 +377,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				setSlotRows(rows as SlotDetail[]);
 			} catch (e) {
 				const error = e as { message?: string };
-				setDayError(
+				console.error(
 					error?.message ??
 						__("Failed to load selected day slot.", "itmaroon-booking-block"),
 				);
@@ -390,6 +437,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			const slots = await apiFetch<SlotRow[]>({ path: slotPath });
 
 			// 途中で月が切り替わっていたら破棄
+
 			if (mySeq !== requestSeqRef.current) return;
 
 			//カレンダーテーブルレンダリング用のデータを生成
@@ -399,6 +447,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			setDailyStatsMap(calendarInfoObj.dailyStats);
 
 			//テーブル表示用のソースを生成
+
 			const booking_data = buildCalendarTableSource(
 				calendarFromInner?.attributes?.selectedMonth as string,
 				calendarInfoObj.dataVal as DayObject[],
@@ -436,6 +485,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	}, [
 		isInitialized,
 		calendarFromInner?.clientId,
+		calendarFromInner?.attributes,
 		resourceId,
 		tableFromInner?.clientId,
 		reservatedInner?.clientId,
@@ -508,13 +558,17 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			if (!reservatedInner) return;
 			if (!resourceId) return;
 
-			const path = "/itmar/v1/get_user_bookings";
+			const path = `/itmar/v1/get_user_bookings?resource_id=${resourceId}`;
 			const bookings = await apiFetch<userBooking[]>({ path });
 
 			// 予約一覧用の Source を作成
-			const reservation_data = buildBookingListTableSource(bookings, {
-				renderActions: renderCancelButtonHtml,
-			});
+			const reservation_data = buildBookingListTableSource(
+				bookings,
+				{
+					renderActions: renderCancelButtonHtml,
+				},
+				true,
+			);
 
 			// ★ 変化があるときだけ tableSource 更新（無限更新防止）
 			const prev = (reservatedInner.attributes?.tableSource ??
@@ -527,11 +581,110 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			}
 		};
 
+		// containerRef.current が属している document (iframe内) を取得
+		const blockDocument = containerRef.current?.ownerDocument;
+		const blockWrapper = blockDocument?.getElementById(
+			`block-${reservatedInner?.clientId}`,
+		);
+		//削除実行ボタンを配置
+		if (blockWrapper) {
+			// そのブロック内にあるテーブルの、最後のthを特定
+			const lastTh = blockWrapper.querySelector("thead th:last-child");
+
+			// 二重追加防止：既にボタンがないか確認
+			if (lastTh && !lastTh.querySelector("#itmar-bulk-delete-button")) {
+				const btn = document.createElement("button");
+				btn.id = "itmar-bulk-delete-button";
+				btn.type = "button";
+				btn.innerText = "削除実行";
+
+				// デザイン調整（インラインでスッキリ配置）
+				Object.assign(btn.style, {
+					background: "#db4949",
+					color: "#fff",
+					border: "none",
+					padding: "2px 8px",
+					borderRadius: "3px",
+					cursor: "pointer",
+					fontSize: "11px",
+					marginLeft: "8px",
+					verticalAlign: "middle",
+				});
+
+				// 削除実行ボタンのクリックイベント
+				btn.addEventListener("click", async (e) => {
+					// クリックイベントが親要素（詳細表示など）に伝播しないようにガード
+					e.preventDefault();
+					e.stopPropagation();
+					e.stopImmediatePropagation();
+
+					// チェックされているIDを収集
+					const checkedInputs = blockWrapper.querySelectorAll(
+						".itmar-delete-checkbox:checked",
+					);
+
+					const bookingIds = Array.from(checkedInputs).map(
+						(input) => (input as HTMLInputElement).value,
+					);
+
+					if (bookingIds.length === 0) {
+						alert(
+							__(
+								"Please check the data you want to delete.",
+								"itmaroon-booking-block",
+							),
+						);
+						return;
+					}
+
+					const confirmMessage = sprintf(
+						/* translators: %d: 削除する件数 */
+						__(
+							"Do you want to completely delete %d data items? \nThis operation cannot be undone.",
+							"itmaroon-booking-block",
+						),
+						bookingIds.length,
+					);
+
+					if (!confirm(confirmMessage)) {
+						return;
+					}
+
+					// 戻り値の型定義
+					interface DeleteBookingsResponse {
+						success: boolean;
+						deleted_count: number;
+						message: string;
+					}
+
+					try {
+						const result = await apiFetch<DeleteBookingsResponse>({
+							path: "/itmar/v1/bookings",
+							method: "DELETE",
+							data: { ids: bookingIds },
+						});
+
+						if (result.success) {
+							alert(result.message);
+							// bookingsデータを再取得して画面を更新
+							setIsInitialized(false);
+						}
+					} catch (error: any) {
+						// apiFetchはHTTPエラー時に例外を投げるため、ここでキャッチ
+						console.error("Delete failed:", error.message);
+						alert(__("Deletion failed.", "itmaroon-booking-block"));
+					}
+				});
+
+				lastTh.appendChild(btn);
+			}
+		}
+
 		// エラーは握りつぶさずログ（必要なら Notice 表示に変更）
 		runReservationDataGet().catch((e: unknown) =>
 			console.error("get reservation -> get reservation data failed:", e),
 		);
-	}, [resourceId, reservatedInner?.clientId]);
+	}, [isInitialized, resourceId, reservatedInner?.clientId]);
 
 	//予定表上のテーブルをクリックしたときの処理
 	useEffect(() => {
@@ -813,6 +966,101 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				label: `${unit.name} (${unit.min}-${unit.max}名)`,
 			})),
 	];
+
+	// 予約情報表示のブロックを選択するためのオプション
+	interface SelectOption {
+		label: string;
+		value: string;
+	}
+	const targetBlocks = [
+		...(targetTitleBlock || []),
+		...(targetInputBlock || []),
+	];
+
+	const titleBlockOptions = [
+		{ label: __("Please Select...", "itmaroon-booking-block"), value: "" },
+		...targetBlocks.reduce((acc, block) => {
+			const { uniqueID, inputName } = block.attributes;
+
+			// ラベルの決定（Title系ならresourceName、Input系ならinputName）
+			const label = uniqueID || inputName;
+			const valueId = uniqueID || inputName;
+
+			// 識別子がない、または既に同じラベルが登録済みの場合はスキップ
+			if (!valueId || !label || acc.some((option) => option.label === label)) {
+				return acc;
+			}
+
+			// オプションを追加
+			acc.push({
+				label: label,
+				value: JSON.stringify({
+					type: block.name,
+					id: valueId,
+				}),
+			});
+
+			return acc;
+		}, [] as SelectOption[]),
+	];
+
+	const modalBlockOptions = useMemo(
+		() => [
+			{ label: __("Please Select...", "itmaroon-booking-block"), value: "" },
+			...targetGroupBlock.reduce((acc, block) => {
+				const { formID } = block.attributes;
+
+				// ラベルの決定（Title系ならresourceName、Input系ならinputName）
+				const label = formID;
+				const valueId = formID;
+
+				// 識別子がない、または既に同じラベルが登録済みの場合はスキップ
+				if (
+					!valueId ||
+					!label ||
+					acc.some((option) => option.label === label)
+				) {
+					return acc;
+				}
+
+				// オプションを追加
+				acc.push({
+					label: label,
+					value: valueId,
+				});
+
+				return acc;
+			}, [] as SelectOption[]),
+		],
+		targetGroupBlock,
+	);
+
+	const confirmFormOptions = useMemo(() => {
+		const modalInner = targetGroupBlock.find(
+			(b: any) => b.attributes?.formID === confirmModal,
+		)?.innerBlocks;
+
+		const inputFigure = modalInner
+			? flattenBlocks(modalInner).filter(
+					(b: any) =>
+						b.name === "itmar/input-figure-block" && b.attributes.form_name,
+			  )
+			: [];
+
+		const confirmFormOptions = [
+			{ label: __("Please Select...", "itmaroon-booking-block"), value: "" },
+			...inputFigure.reduce((acc: SelectOption[], block: any) => {
+				const { form_name } = block.attributes;
+				if (!form_name || acc.some((option) => option.label === form_name)) {
+					return acc;
+				}
+				acc.push({ label: form_name, value: form_name });
+				return acc;
+			}, []),
+		];
+
+		return confirmFormOptions;
+	}, [targetGroupBlock, confirmModal]);
 
 	return (
 		<>
@@ -1111,16 +1359,234 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 					</div>
 				</PanelBody>
 				{/* 選択日（例外）編集 */}
-
-				{isModalOpen && (
-					<SlotEditModal
-						resourceId={resourceId}
-						selDate={selectedDateYmd || ""}
-						rows={slotRows}
-						onClose={() => setIsModalOpen(false)}
-						onSaveSuccess={() => setLastUpdated(Date.now())} // 保存成功時に現在時刻をセット
-					/>
-				)}
+				<PanelBody
+					title={__("User setteing Display Disp", "itmaroon-booking-block")}
+					initialOpen={true}
+				>
+					<PanelBody
+						title={__("Setting Confirm Modal", "itmaroon-booking-block")}
+						initialOpen={true}
+					>
+						<SelectControl
+							label={__("Modal ID", "itmaroon-booking-block")}
+							value={confirmModal}
+							options={modalBlockOptions}
+							onChange={(val) => {
+								setAttributes({ confirmModal: val });
+							}}
+						/>
+						<SelectControl
+							label={__("Reserve Form", "itmaroon-booking-block")}
+							value={reserveForm}
+							options={confirmFormOptions}
+							onChange={(val) => {
+								setAttributes({ reserveForm: val });
+							}}
+						/>
+						<SelectControl
+							label={__("Cancel Modify Form", "itmaroon-booking-block")}
+							value={cancelModForm}
+							options={confirmFormOptions}
+							onChange={(val) => {
+								setAttributes({ cancelModForm: val });
+							}}
+						/>
+					</PanelBody>
+					<PanelBody
+						title={__("Message Content", "itmaroon-booking-block")}
+						initialOpen={false}
+					>
+						<TextControl
+							label={__("Success Booking", "itmaroon-booking-block")}
+							value={infoMessages.successBooking}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										successBooking: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Success Cancel Booking", "itmaroon-booking-block")}
+							value={infoMessages.cancelSuccess}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										cancelSuccess: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Success Booking Change", "itmaroon-booking-block")}
+							value={infoMessages.changeSuccess}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										changeSuccess: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Booking No Change", "itmaroon-booking-block")}
+							value={infoMessages.noChange}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										noChange: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Login Error", "itmaroon-booking-block")}
+							value={infoMessages.errorLogin}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										errorLogin: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Day Slot Nothing", "itmaroon-booking-block")}
+							value={infoMessages.errorNoSlot}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										errorNoSlot: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Enough Slot Nothing", "itmaroon-booking-block")}
+							value={infoMessages.errorNoUnit}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										errorNoUnit: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("The Day Full ", "itmaroon-booking-block")}
+							value={infoMessages.errorFull}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										errorFull: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Reserve Seet Full ", "itmaroon-booking-block")}
+							value={infoMessages.seetFull}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										seetFull: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Target Nothing", "itmaroon-booking-block")}
+							value={infoMessages.errorNoTarget}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										errorNoTarget: val,
+									},
+								});
+							}}
+						/>
+						<TextControl
+							label={__("Inside Error", "itmaroon-booking-block")}
+							value={infoMessages.errorInside}
+							onChange={(val: string) => {
+								setAttributes({
+									infoMessages: {
+										...infoMessages,
+										errorInside: val,
+									},
+								});
+							}}
+						/>
+					</PanelBody>
+					<PanelBody
+						title={__("Setting Target Title", "itmaroon-booking-block")}
+						initialOpen={false}
+					>
+						<SelectControl
+							label={__("Resource Name", "itmaroon-booking-block")}
+							value={dispUniqueIds.resourceName}
+							options={titleBlockOptions}
+							onChange={(val) => {
+								setAttributes({
+									dispUniqueIds: {
+										...dispUniqueIds,
+										resourceName: val,
+									},
+								});
+							}}
+						/>
+						<SelectControl
+							label={__("Guest Count", "itmaroon-booking-block")}
+							value={dispUniqueIds.guestCount}
+							options={titleBlockOptions}
+							onChange={(val) => {
+								setAttributes({
+									dispUniqueIds: {
+										...dispUniqueIds,
+										guestCount: val,
+									},
+								});
+							}}
+						/>
+						<SelectControl
+							label={__("Reserve Date", "itmaroon-booking-block")}
+							value={dispUniqueIds.reserveDate}
+							options={titleBlockOptions}
+							onChange={(val) => {
+								setAttributes({
+									dispUniqueIds: {
+										...dispUniqueIds,
+										reserveDate: val,
+									},
+								});
+							}}
+						/>
+						<SelectControl
+							label={__("Guest Count", "itmaroon-booking-block")}
+							value={dispUniqueIds.reserveTime}
+							options={titleBlockOptions}
+							onChange={(val) => {
+								setAttributes({
+									dispUniqueIds: {
+										...dispUniqueIds,
+										reserveTime: val,
+									},
+								});
+							}}
+						/>
+					</PanelBody>
+				</PanelBody>
 			</InspectorControls>
 
 			<InspectorControls group="styles">
@@ -1246,7 +1712,21 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				</PanelBody>
 			</InspectorControls>
 
-			<div {...innerBlocksProps} />
+			{isModalOpen && (
+				<SlotEditModal
+					resourceId={resourceId}
+					selDate={selectedDateYmd || ""}
+					rows={slotRows}
+					onClose={() => setIsModalOpen(false)}
+					onSaveSuccess={() => setLastUpdated(Date.now())} // 保存成功時に現在時刻をセット
+				/>
+			)}
+
+			<div
+				{...innerBlocksProps}
+				ref={containerRef}
+				onClickCapture={onTableClick}
+			/>
 		</>
 	);
 }

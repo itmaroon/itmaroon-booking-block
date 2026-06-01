@@ -322,7 +322,10 @@ export const buildBookingListTableSource = (
 	bookings: userBooking[],
 	{
 		renderActions, // キャンセルボタンなどを描画するコールバック
-	}: { renderActions: (booking: userBooking) => string },
+	}: {
+		renderActions: (booking: userBooking, showCheckbox: boolean) => string;
+	},
+	showCheckbox: boolean = false,
 ): TableSource => {
 	if (!Array.isArray(bookings) || bookings.length === 0) {
 		// データがない場合は「予約がありません」という1行を返す
@@ -343,21 +346,44 @@ export const buildBookingListTableSource = (
 
 	// データ行
 	bookings.forEach((booking) => {
-		tableSource.push({
-			cells: [
-				{ tag: "td", content: booking.slot_date },
-				{ tag: "td", content: booking.resource_name },
-				{ tag: "td", content: `${booking.guest_count} 名` },
-				{
-					tag: "td",
-					content: renderActions(booking),
-					attributes: {
-						"data-booking-id": booking.booking_id,
-						"data-status": booking.booking_status,
-					},
+		// 1. まず日付セルを入れた配列を作成
+		const cells: TableCell[] = [
+			{ tag: "td" as const, content: booking.reserve_date },
+		];
+		// 2. 時間を表示すべきリソースか判定して push する
+		// ここで is_time_resource（仮）などのフラグで判定
+		if (
+			!(booking.reserve_time === "00:00:00" && booking.end_time === "23:59:59")
+		) {
+			cells.push({
+				tag: "td" as const,
+				content: `${booking.reserve_time.substring(
+					0,
+					5,
+				)}～${booking.end_time.substring(0, 5)}`,
+				attributes: {
+					class: "reservation_time_cell", // ここにクラス名を追加
 				},
-			],
-		});
+			});
+		}
+
+		// 3. 残りのセルを push
+		cells.push(
+			{ tag: "td" as const, content: `${booking.guest_count} 名` },
+			{
+				tag: "td" as const,
+				content: renderActions(booking, showCheckbox),
+				attributes: {
+					"data-booking-id": booking.booking_id,
+					"data-slot-ids": booking.slot_ids,
+					"data-status": booking.booking_status,
+					"data-reserve-date": booking.reserve_date,
+					"data-guest-count": booking.guest_count,
+				},
+			},
+		);
+
+		tableSource.push({ cells });
 	});
 
 	return tableSource;
@@ -426,10 +452,27 @@ export const renderBookingCellHtml = (
 	`.trim();
 };
 
-export const renderCancelButtonHtml = (booking: userBooking): string => {
+export const renderCancelButtonHtml = (
+	booking: userBooking,
+	showCheckbox: boolean = false,
+): string => {
 	// 既にキャンセル済みの場合はボタンを出さない、または無効化する
 	if (booking.booking_status === "cancelled") {
-		return `<span style="color: #999;">キャンセル済み</span>`;
+		let html = `<span style="color: #999;">キャンセル済み</span>`;
+
+		// 管理者モード等で、右側にチェックボックスを配置
+		if (showCheckbox) {
+			html += ` 
+				<input 
+					type="checkbox" 
+					class="itmar-delete-checkbox" 
+					value="${booking.booking_id}" 
+					style="margin-left: 8px; vertical-align: middle; cursor: pointer;"
+					onclick="event.stopPropagation();" 
+				>
+			`;
+		}
+		return html.trim();
 	}
 
 	return `
@@ -438,7 +481,7 @@ export const renderCancelButtonHtml = (booking: userBooking): string => {
             class="itmar-cancel-button" 
             style="background:#e53935; color:#fff; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;"
         >
-            キャンセル
+            変更・キャンセル
         </button>
     `.trim();
 };
