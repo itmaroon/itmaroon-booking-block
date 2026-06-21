@@ -755,6 +755,7 @@ function Edit(props) {
     confirmModal,
     reserveForm,
     cancelModForm,
+    buttonIDs,
     isHoliday,
     enoughBorder,
     enoughBgColor,
@@ -1494,7 +1495,10 @@ function Edit(props) {
     });
     return acc;
   }, [])], targetGroupBlock);
-  const confirmFormOptions = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => {
+  const {
+    confirmFormOptions,
+    buttonOptions
+  } = (0,_wordpress_element__WEBPACK_IMPORTED_MODULE_3__.useMemo)(() => {
     const modalInner = targetGroupBlock.find(b => b.attributes?.formID === confirmModal)?.innerBlocks;
     const inputFigure = modalInner ? (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_8__.flattenBlocks)(modalInner).filter(b => b.name === "itmar/input-figure-block" && b.attributes.form_name) : [];
     const confirmFormOptions = [{
@@ -1513,7 +1517,29 @@ function Edit(props) {
       });
       return acc;
     }, [])];
-    return confirmFormOptions;
+    const buttonOptions = [{
+      label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Please Select...", "itmaroon-booking-block"),
+      value: ""
+    }, ...inputFigure.reduce((acc, block) => {
+      const buttonBlocks = (0,itmar_block_packages__WEBPACK_IMPORTED_MODULE_8__.flattenBlocks)(block.innerBlocks || []).filter(innerBlock => innerBlock.name === "itmar/design-button" && innerBlock.attributes?.buttonKey);
+      buttonBlocks.forEach(buttonBlock => {
+        const {
+          buttonKey
+        } = buttonBlock.attributes;
+        if (!buttonKey || acc.some(option => option.value === buttonKey)) {
+          return;
+        }
+        acc.push({
+          label: buttonKey,
+          value: buttonKey
+        });
+      });
+      return acc;
+    }, [])];
+    return {
+      confirmFormOptions,
+      buttonOptions
+    };
   }, [targetGroupBlock, confirmModal]);
   return /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.Fragment, {
     children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_block_editor__WEBPACK_IMPORTED_MODULE_1__.InspectorControls, {
@@ -1776,7 +1802,7 @@ function Edit(props) {
         initialOpen: true,
         children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsxs)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.PanelBody, {
           title: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Setting Confirm Modal", "itmaroon-booking-block"),
-          initialOpen: true,
+          initialOpen: false,
           children: [/*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
             label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Modal ID", "itmaroon-booking-block"),
             value: confirmModal,
@@ -1802,6 +1828,42 @@ function Edit(props) {
             onChange: val => {
               setAttributes({
                 cancelModForm: val
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Reseve Button", "itmaroon-booking-block"),
+            value: buttonIDs.reserve,
+            options: buttonOptions,
+            onChange: val => {
+              setAttributes({
+                buttonIDs: {
+                  ...buttonIDs,
+                  reserve: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Modify Button", "itmaroon-booking-block"),
+            value: buttonIDs.modify,
+            options: buttonOptions,
+            onChange: val => {
+              setAttributes({
+                buttonIDs: {
+                  ...buttonIDs,
+                  modify: val
+                }
+              });
+            }
+          }), /*#__PURE__*/(0,react_jsx_runtime__WEBPACK_IMPORTED_MODULE_12__.jsx)(_wordpress_components__WEBPACK_IMPORTED_MODULE_2__.SelectControl, {
+            label: (0,_wordpress_i18n__WEBPACK_IMPORTED_MODULE_0__.__)("Cancel Button", "itmaroon-booking-block"),
+            value: buttonIDs.cancel,
+            options: buttonOptions,
+            onChange: val => {
+              setAttributes({
+                buttonIDs: {
+                  ...buttonIDs,
+                  cancel: val
+                }
               });
             }
           })]
@@ -3246,7 +3308,7 @@ let nanoid = (size = 21) => {
   \*************************************************/
 (module) {
 
-module.exports = /*#__PURE__*/JSON.parse('{"$schema":"https://schemas.wp.org/trunk/block.json","apiVersion":3,"name":"itmar/reservation-block","version":"0.1.0","title":"RESERVATION BLOCK","category":"widgets","supports":{"html":false},"attributes":{"resourceId":{"type":"number","default":0},"resourceSlug":{"type":"string","default":""},"resourceRest":{"type":"string","default":""},"selectedSlug":{"type":"string","default":""},"selectedRest":{"type":"string","default":""},"calendarTableId":{"type":"string","default":""},"timeTableId":{"type":"string","default":""},"bookingTableId":{"type":"string","default":""},"confirmModal":{"type":"string","default":""},"reserveForm":{"type":"string","default":""},"cancelModForm":{"type":"string","default":""},"capacityDefault":{"type":"number","default":1},"closedWeekdays":{"type":"array","default":[]},"infoMessages":{"type":"object","default":{}},"dispUniqueIds":{"type":"object","default":{}},"isHoliday":{"type":"boolean","default":false},"enoughBorder":{"type":"number","default":30},"enoughBgColor":{"type":"string"},"enoughGradient":{"type":"string"},"lowBgColor":{"type":"string"},"lowGradient":{"type":"string"},"emptyBgColor":{"type":"string"},"emptyGradient":{"type":"string"},"closeBgColor":{"type":"string"},"closeGradient":{"type":"string"},"remainDisp":{"type":"string","default":"number"},"restDisp":{"type":"string","default":"Close"},"confirmThings":{"type":"array","default":[]},"lastClickedCell":{"type":"object","default":null}},"textdomain":"itmaroon-booking-block","editorScript":"file:./index.js","editorStyle":"file:./index.css","style":"file:./style-index.css","viewScript":"file:./view.js"}');
+module.exports = /*#__PURE__*/JSON.parse('{"$schema":"https://schemas.wp.org/trunk/block.json","apiVersion":3,"name":"itmar/reservation-block","version":"0.1.0","title":"RESERVATION BLOCK","category":"widgets","supports":{"html":false},"attributes":{"resourceId":{"type":"number","default":0},"resourceSlug":{"type":"string","default":""},"resourceRest":{"type":"string","default":""},"selectedSlug":{"type":"string","default":""},"selectedRest":{"type":"string","default":""},"calendarTableId":{"type":"string","default":""},"timeTableId":{"type":"string","default":""},"bookingTableId":{"type":"string","default":""},"confirmModal":{"type":"string","default":""},"reserveForm":{"type":"string","default":""},"cancelModForm":{"type":"string","default":""},"buttonIDs":{"type":"object","default":{}},"capacityDefault":{"type":"number","default":1},"closedWeekdays":{"type":"array","default":[]},"infoMessages":{"type":"object","default":{}},"dispUniqueIds":{"type":"object","default":{}},"isHoliday":{"type":"boolean","default":false},"enoughBorder":{"type":"number","default":30},"enoughBgColor":{"type":"string"},"enoughGradient":{"type":"string"},"lowBgColor":{"type":"string"},"lowGradient":{"type":"string"},"emptyBgColor":{"type":"string"},"emptyGradient":{"type":"string"},"closeBgColor":{"type":"string"},"closeGradient":{"type":"string"},"remainDisp":{"type":"string","default":"number"},"restDisp":{"type":"string","default":"Close"},"confirmThings":{"type":"array","default":[]},"lastClickedCell":{"type":"object","default":null}},"textdomain":"itmaroon-booking-block","editorScript":"file:./index.js","editorStyle":"file:./index.css","style":"file:./style-index.css","viewScript":"file:./view.js"}');
 
 /***/ }
 

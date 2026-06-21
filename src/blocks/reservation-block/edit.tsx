@@ -84,6 +84,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		confirmModal,
 		reserveForm,
 		cancelModForm,
+		buttonIDs,
 		isHoliday,
 		enoughBorder,
 		enoughBgColor,
@@ -1035,7 +1036,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		targetGroupBlock,
 	);
 
-	const confirmFormOptions = useMemo(() => {
+	const { confirmFormOptions, buttonOptions } = useMemo(() => {
 		const modalInner = targetGroupBlock.find(
 			(b: any) => b.attributes?.formID === confirmModal,
 		)?.innerBlocks;
@@ -1059,7 +1060,33 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			}, []),
 		];
 
-		return confirmFormOptions;
+		const buttonOptions = [
+			{ label: __("Please Select...", "itmaroon-booking-block"), value: "" },
+			...inputFigure.reduce((acc: SelectOption[], block: any) => {
+				const buttonBlocks = flattenBlocks(block.innerBlocks || []).filter(
+					(innerBlock: any) =>
+						innerBlock.name === "itmar/design-button" &&
+						innerBlock.attributes?.buttonKey,
+				);
+
+				buttonBlocks.forEach((buttonBlock: any) => {
+					const { buttonKey } = buttonBlock.attributes;
+
+					if (!buttonKey || acc.some((option) => option.value === buttonKey)) {
+						return;
+					}
+
+					acc.push({
+						label: buttonKey,
+						value: buttonKey,
+					});
+				});
+
+				return acc;
+			}, []),
+		];
+
+		return { confirmFormOptions, buttonOptions };
 	}, [targetGroupBlock, confirmModal]);
 
 	return (
@@ -1365,7 +1392,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				>
 					<PanelBody
 						title={__("Setting Confirm Modal", "itmaroon-booking-block")}
-						initialOpen={true}
+						initialOpen={false}
 					>
 						<SelectControl
 							label={__("Modal ID", "itmaroon-booking-block")}
@@ -1389,6 +1416,30 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 							options={confirmFormOptions}
 							onChange={(val) => {
 								setAttributes({ cancelModForm: val });
+							}}
+						/>
+						<SelectControl
+							label={__("Reseve Button", "itmaroon-booking-block")}
+							value={buttonIDs.reserve}
+							options={buttonOptions}
+							onChange={(val) => {
+								setAttributes({ buttonIDs: { ...buttonIDs, reserve: val } });
+							}}
+						/>
+						<SelectControl
+							label={__("Modify Button", "itmaroon-booking-block")}
+							value={buttonIDs.modify}
+							options={buttonOptions}
+							onChange={(val) => {
+								setAttributes({ buttonIDs: { ...buttonIDs, modify: val } });
+							}}
+						/>
+						<SelectControl
+							label={__("Cancel Button", "itmaroon-booking-block")}
+							value={buttonIDs.cancel}
+							options={buttonOptions}
+							onChange={(val) => {
+								setAttributes({ buttonIDs: { ...buttonIDs, cancel: val } });
 							}}
 						/>
 					</PanelBody>

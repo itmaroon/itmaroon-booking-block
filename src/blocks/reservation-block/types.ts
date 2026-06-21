@@ -25,6 +25,12 @@ interface TargetTite {
 	reserveTime: string;
 }
 
+interface ButtonId {
+	reserve: string;
+	modify: string;
+	cancel: string;
+}
+
 export interface BookingAttributes {
 	resourceId: number;
 	resourceSlug: string;
@@ -42,6 +48,7 @@ export interface BookingAttributes {
 	dispUniqueIds: TargetTite;
 	confirmModal: string;
 	reserveForm: string;
+	buttonIDs: ButtonId;
 	cancelModForm: string;
 	enoughBorder: number;
 	enoughBgColor: string;

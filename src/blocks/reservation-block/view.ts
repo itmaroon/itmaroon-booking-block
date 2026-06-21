@@ -46,6 +46,7 @@ jQuery(function ($) {
 			confirmModal,
 			reserveForm,
 			cancelModForm,
+			buttonIDs,
 			...renderStyle
 		} = attributes;
 
@@ -447,17 +448,7 @@ jQuery(function ($) {
 				// 正規表現で数字以外（\D）をすべて空文字に置換し、数値型に変換
 				const guestCountInt = parseInt(guestCount, 10);
 				$guestCountInput.val(guestCountInt);
-				$guestCountInput.data("prev_count", guestCountInt); //初期値をデータ属性で確保しておく
-				$guestCountInput.on("change", function () {
-					const currentVal = parseInt($(this).val()?.toString() ?? "", 10);
-
-					const prevVal = $(this).data("prev_count"); // 保存しておいた値を呼び出し
-
-					if (currentVal !== prevVal) {
-						console.log("人数が変更されました！");
-						// ここで更新ボタンをハイライトさせるなどの処理ができる
-					}
-				});
+				$guestCountInput.data("prev_value", guestCountInt); //初期値をデータ属性で確保しておく
 			}
 
 			//キャンセル処理に必要なIDをモーダルに記録
@@ -471,6 +462,8 @@ jQuery(function ($) {
 		let click_key = "";
 		$reservation_modal.on("submit", "form", async function (e: any) {
 			e.preventDefault(); // ページ遷移を止める
+			//サブミッタがないときは処理しない
+			if (!e.originalEvent) return;
 			//submitボタンの取得
 			const $form = $(this);
 			const $submitBtn = $form.find('button[type="submit"]');
@@ -486,9 +479,12 @@ jQuery(function ($) {
 				//確認前のフォームでクリックされたボタンIDをキープ
 				click_key = e.originalEvent?.submitter?.dataset.key;
 			} else if ($form.attr("id") === "itmar_send_exec") {
-				//クリックされたボタンが戻るなら終了
-				const comfirm_click_key = e.originalEvent?.submitter?.dataset.key;
-				if (!comfirm_click_key || comfirm_click_key === "back_id") return;
+				//戻るの処理
+				const pageDirection = e.originalEvent.submitter?.dataset.back;
+
+				if (pageDirection === "back") {
+					return;
+				}
 
 				// ✅ モーダルに保存しておいた ID を取得
 				const $modalElement = $form.closest($reservation_modal);
@@ -550,7 +546,7 @@ jQuery(function ($) {
 						.text(__("Sending...", "itmaroon-booking-block"));
 
 					//予約の実行
-					if (click_key === "foword_reserve") {
+					if (click_key === buttonIDs.reserve) {
 						// 送信データを作成
 						const data = {
 							resource_id: resourceId,
@@ -578,7 +574,7 @@ jQuery(function ($) {
 						}
 
 						//修正の実行
-					} else if (click_key === "foword_mod") {
+					} else if (click_key === buttonIDs.modify) {
 						// 送信データを作成
 						const data = {
 							id: bookingId,
@@ -603,7 +599,7 @@ jQuery(function ($) {
 						}
 
 						//キャンセルの実行
-					} else if (click_key === "foword_cancel") {
+					} else if (click_key === buttonIDs.cancel) {
 						// 送信データを作成
 						const data = {
 							id: bookingId,
@@ -631,7 +627,9 @@ jQuery(function ($) {
 					console.error("予約エラー:", error.message);
 					message = {
 						code: error.info_code,
-						text: infoMessages[error.info_code],
+						text: infoMessages[error.info_code]
+							? infoMessages[error.info_code]
+							: error.message,
 					};
 
 					// error が Error オブジェクトかどうかをチェック
