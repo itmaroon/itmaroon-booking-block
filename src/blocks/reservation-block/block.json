@@ -52,7 +52,11 @@
 		"cancelModForm":{
 			"type":"string",
 			"default":""
-		},  
+		}, 
+		"buttonIDs":{
+			"type":"object",
+			"default":{}
+		},   
 		
 		"capacityDefault":{
 			"type":"number",

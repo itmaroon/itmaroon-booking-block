@@ -53,6 +53,10 @@
       "type": "string",
       "default": ""
     },
+    "buttonIDs": {
+      "type": "object",
+      "default": {}
+    },
     "capacityDefault": {
       "type": "number",
       "default": 1
