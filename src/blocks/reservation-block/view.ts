@@ -496,9 +496,9 @@ jQuery(function ($) {
 					.prop("disabled", true)
 					.text(__("Sending...", "itmaroon-booking-block"));
 
-				const $data_form = $(this)
-					.closest(".wp-block-itmar-contactmail-sender")
-					.find("#to_confirm_form");
+				// const $data_form = $(this)
+				// 	.closest(".wp-block-itmar-contactmail-sender")
+				// 	.find("#to_confirm_form");
 				// フォーム内のデータを取得
 				let guestCount: string | number = 0;
 				let reserveDate: string | undefined = "";
