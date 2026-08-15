@@ -1,0 +1,512 @@
+# Copyright (C) 2026 Web Creator ITmaroon
+# This file is distributed under the GPL-2.0-or-later.
+msgid ""
+msgstr ""
+"Project-Id-Version: ITMAROON BOOKING BLOCK 0.1.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/itmaroon-booking-block\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-08-14T12:35:54+02:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.12.0\n"
+"X-Domain: itmaroon-booking-block\n"
+
+#. Plugin Name of the plugin
+#: itmaroon-booking-block.php
+msgid "ITMAROON BOOKING BLOCK"
+msgstr ""
+
+#. Plugin URI of the plugin
+#: itmaroon-booking-block.php
+msgid "https://itmaroon.net"
+msgstr ""
+
+#. Description of the plugin
+#: itmaroon-booking-block.php
+msgid "We provide blocks with reservation management function."
+msgstr ""
+
+#. Author of the plugin
+#: itmaroon-booking-block.php
+msgid "Web Creator ITmaroon"
+msgstr ""
+
+#. translators: %d: 削除された件数
+#: booking-class-package/src/Reservation/BookingAPI.php:252
+#, php-format
+msgid "%d cases data deleted."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:615
+msgid "Invalid data provided."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:625
+msgid "Units saved successfully."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:631
+msgid "Database error occurred."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:651
+msgid "Name is required."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:669
+msgid "Unit updated."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:672
+msgid "Update failed."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:694
+msgid "This unit cannot be deleted because it is already reserved."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:705
+msgid "The frame associated with the unit has been removed."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:708
+msgid "A database error occurred."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:785
+msgid "The ID to be deleted has not been specified."
+msgstr ""
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:802
+#, php-format
+msgid "This slot cannot be deleted because it contains %d reserved slots."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Detailed Edit"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Time / Unit"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Booked"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "items saved successfully."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Save failed."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Saving..."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Save All Changes"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Are you sure you want to delete all slots for this day? This will make it a closed day."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "items deleted successfully."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "An unexpected error occurred."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Delete All Slots (Set as Closed)"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Cancel"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Sun"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Mon"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Tue"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Wed"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Thu"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Fri"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Sat"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "We provide block provides reservation management functionality.."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Failed to load selected day slot."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Please check the data you want to delete."
+msgstr ""
+
+#. translators: %d: 削除する件数
+#: build/blocks/reservation-block/index.js:2
+#, js-format
+msgid ""
+"Do you want to completely delete %d data items? \n"
+"This operation cannot be undone."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Deletion failed."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Select a unit to delete or edit"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Please Select..."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Setting Display Table"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Calendar Identification"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "TaimTable Identification"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Booking Identification"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Slots Resource"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Resource Name"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit Setting"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Resource Units"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Select a unit to remove or modify from the master list.If not selected, it will be added."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit Name"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Capacity (min)"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Capacity (max)"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit saved successfully."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Failed to save unit."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Please enter a unit name."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Creating..."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Add Unit"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Add Num"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit updated successfully."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Failed to update unit."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Modify Unit"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Are you sure you want to delete this unit? This may affect existing slots."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit Delete successfully."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "An unknown error occurred."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Please select a saved unit to delete."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Delete Unit"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Monthly slots"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Selected month (from calendar)"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "This value is synced from the inner calendar block (YYYY/MM)."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Closed weekdays"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Time Span Setting"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Time Spans"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Start Time"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "End Time"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Time travel(minutes)"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Bulk create failed."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "No dates to create (maybe all weekdays are closed)."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Month is not selected in calendar block."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Resource is not selected."
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Add slots (this month)"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Dates to be created:"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "User setteing Display Disp"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Setting Confirm Modal"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Modal ID"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Reserve Form"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Cancel Modify Form"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Reseve Button"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Modify Button"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Cancel Button"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Message Content"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Success Booking"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Success Cancel Booking"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Success Booking Change"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Booking No Change"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Login Error"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Day Slot Nothing"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Enough Slot Nothing"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "The Day Full "
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Reserve Seet Full "
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Target Nothing"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Inside Error"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Setting Target Title"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Guest Count"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Reserve Date"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Calendar settings"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Show Holiday"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Enough Border"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Choose Enough Remaind Cell"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Background color"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Choose Low Remaind Cell"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Choose Empty Cell"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Choose Close Cell"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Remaind Display type"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Number Display"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Sign"
+msgstr ""
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Rest Display"
+msgstr ""
+
+#: build/blocks/reservation-block/view.js:1
+msgid "Sending..."
+msgstr ""
+
+#: build/blocks/reservation-block/view.js:1
+msgid "Operation Complete"
+msgstr ""
+
+#: build/blocks/reservation-block/block.json
+#: src/blocks/reservation-block/block.json
+msgctxt "block title"
+msgid "RESERVATION BLOCK"
+msgstr ""

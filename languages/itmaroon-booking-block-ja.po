@@ -1,0 +1,529 @@
+# Copyright (C) 2026 Web Creator ITmaroon
+# This file is distributed under the GPL-2.0-or-later.
+msgid ""
+msgstr ""
+"Project-Id-Version: ITMAROON BOOKING BLOCK 0.1.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/itmaroon-booking-"
+"block\n"
+"POT-Creation-Date: 2026-08-14T12:35:54+02:00\n"
+"PO-Revision-Date: 2026-08-14 20:25+0900\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: ja_JP\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 3.9\n"
+"X-Domain: itmaroon-booking-block\n"
+
+#. Plugin Name of the plugin
+#: itmaroon-booking-block.php
+msgid "ITMAROON BOOKING BLOCK"
+msgstr ""
+
+#. Plugin URI of the plugin
+#: itmaroon-booking-block.php
+msgid "https://itmaroon.net"
+msgstr ""
+
+#. Description of the plugin
+#: itmaroon-booking-block.php
+msgid "We provide blocks with reservation management function."
+msgstr "予約管理機能を提供するブロックです。"
+
+#. Author of the plugin
+#: itmaroon-booking-block.php
+msgid "Web Creator ITmaroon"
+msgstr "WebクリエイターITmaroon"
+
+#. translators: %d: 削除された件数
+#: booking-class-package/src/Reservation/BookingAPI.php:252
+#, php-format
+msgid "%d cases data deleted."
+msgstr "%d 件のデータを削除"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:615
+msgid "Invalid data provided."
+msgstr "無効なデータです。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:625
+msgid "Units saved successfully."
+msgstr "ユニットが正常に保存されました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:631
+msgid "Database error occurred."
+msgstr "データベースエラーが発生しました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:651
+msgid "Name is required."
+msgstr "名前は必須です。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:669
+msgid "Unit updated."
+msgstr "ユニットが更新されました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:672
+msgid "Update failed."
+msgstr "更新に失敗しました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:694
+msgid "This unit cannot be deleted because it is already reserved."
+msgstr "このユニットは既に予約されているため、削除できません。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:705
+msgid "The frame associated with the unit has been removed."
+msgstr "そのユニットに関連する予約枠は取り外されました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:708
+msgid "A database error occurred."
+msgstr "データベースエラーが発生しました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:785
+msgid "The ID to be deleted has not been specified."
+msgstr "削除するIDが指定されていません。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:802
+#, php-format
+msgid "This slot cannot be deleted because it contains %d reserved slots."
+msgstr ""
+"このスロットには %d 個の予約済みスロットが含まれているため、削除できません。"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Detailed Edit"
+msgstr "詳細な編集"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Time / Unit"
+msgstr "時間／ユニット"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Booked"
+msgstr "予約済み"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "items saved successfully."
+msgstr "項目が正常に保存されました。"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Save failed."
+msgstr "保存に失敗しました。"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Saving..."
+msgstr "保存中..."
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Save All Changes"
+msgstr "すべての変更を保存"
+
+#: build/blocks/reservation-block/index.js:1
+msgid ""
+"Are you sure you want to delete all slots for this day? This will make it a "
+"closed day."
+msgstr ""
+"この日のすべての予約枠を削除してもよろしいですか？削除すると、この日は「休業"
+"日」となります。"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "items deleted successfully."
+msgstr "項目が正常に削除されました。"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "An unexpected error occurred."
+msgstr "予期しないエラーが発生しました。"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Delete All Slots (Set as Closed)"
+msgstr "すべてのスロットを削除（「休業」に設定）"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Cancel"
+msgstr "キャンセル"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Sun"
+msgstr "日"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Mon"
+msgstr "月"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Tue"
+msgstr "火"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Wed"
+msgstr "水"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Thu"
+msgstr "木"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Fri"
+msgstr "金"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Sat"
+msgstr "土"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "We provide block provides reservation management functionality.."
+msgstr "予約管理機能を提供するブロックをご用意しています。"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Failed to load selected day slot."
+msgstr "選択した日の予約枠の読み込みに失敗しました。"
+
+#: build/blocks/reservation-block/index.js:1
+msgid "Please check the data you want to delete."
+msgstr "削除したいデータにチェックを入れてください。"
+
+#. translators: %d: 削除する件数
+#: build/blocks/reservation-block/index.js:2
+msgid ""
+"Do you want to completely delete %d data items? \n"
+"This operation cannot be undone."
+msgstr ""
+"%d個のデータ項目を完全に削除しますか？\n"
+"\n"
+"この操作は元に戻せません。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Deletion failed."
+msgstr "削除に失敗しました。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Select a unit to delete or edit"
+msgstr "削除または編集するユニットを選択してください。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Please Select..."
+msgstr "選択してください..."
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Setting Display Table"
+msgstr "ディスプレイテーブル設定"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Calendar Identification"
+msgstr "カレンダーの識別"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "TaimTable Identification"
+msgstr "TaimTableの識別"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Booking Identification"
+msgstr "予約識別情報"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Slots Resource"
+msgstr "スロットの提供元"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Resource Name"
+msgstr "提供元名"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit Setting"
+msgstr "ユニット設定"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Resource Units"
+msgstr "提供元のユニット"
+
+#: build/blocks/reservation-block/index.js:2
+msgid ""
+"Select a unit to remove or modify from the master list.If not selected, it "
+"will be added."
+msgstr ""
+"マスターリストから、削除または変更するユニットを選択してください。選択しない"
+"場合は、追加されます。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit Name"
+msgstr "ユニット名"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Capacity (min)"
+msgstr "定員（最小）"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Capacity (max)"
+msgstr "定員（最大）"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit saved successfully."
+msgstr "ユニットが正常に保存されました。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Failed to save unit."
+msgstr "ユニットの保存に失敗しました。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Please enter a unit name."
+msgstr "ユニット名を入力してください。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Creating..."
+msgstr "作成中..."
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Add Unit"
+msgstr "ユニット追加"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Add Num"
+msgstr "人数追加"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit updated successfully."
+msgstr "ユニットが正常に更新されました。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Failed to update unit."
+msgstr "ユニットの更新に失敗しました。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Modify Unit"
+msgstr "ユニットを修正"
+
+#: build/blocks/reservation-block/index.js:2
+msgid ""
+"Are you sure you want to delete this unit? This may affect existing slots."
+msgstr ""
+"このユニットを削除してもよろしいですか？既存のスロットに影響が及ぶ可能性があ"
+"ります。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Unit Delete successfully."
+msgstr "ユニットの削除に成功しました。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "An unknown error occurred."
+msgstr "不明なエラーが発生しました。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Please select a saved unit to delete."
+msgstr "削除する保存済みユニットを選択してください。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Delete Unit"
+msgstr "ユニットを削除"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Monthly slots"
+msgstr "月間予約枠"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Selected month (from calendar)"
+msgstr "選択された月（カレンダーから）"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "This value is synced from the inner calendar block (YYYY/MM)."
+msgstr "この値は、内部のカレンダーブロック（YYYY/MM）と同期されます。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Closed weekdays"
+msgstr "平日の休業日"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Time Span Setting"
+msgstr "期間設定"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Time Spans"
+msgstr "期間"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Start Time"
+msgstr "開始時間"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "End Time"
+msgstr "終了時間"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Time travel(minutes)"
+msgstr "移動時間（分）"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Bulk create failed."
+msgstr "一括作成に失敗しました。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "No dates to create (maybe all weekdays are closed)."
+msgstr ""
+"作成対象の日付がありません（すべての平日が休業日の可能性があります）。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Month is not selected in calendar block."
+msgstr "カレンダーブロックで月が選択されていません。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Resource is not selected."
+msgstr "リソースが選択されていません。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Add slots (this month)"
+msgstr "予約枠を追加（今月分）"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Dates to be created:"
+msgstr "作成する日付："
+
+#: build/blocks/reservation-block/index.js:2
+msgid "User setteing Display Disp"
+msgstr "ユーザー表示設定"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Setting Confirm Modal"
+msgstr "確認モーダル設定"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Modal ID"
+msgstr "モーダルID"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Reserve Form"
+msgstr "予約フォーム"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Cancel Modify Form"
+msgstr "修正キャンセル"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Reseve Button"
+msgstr "予約ボタン"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Modify Button"
+msgstr "修正ボタン"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Cancel Button"
+msgstr "キャンセルボタン"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Message Content"
+msgstr "メッセージの内容"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Success Booking"
+msgstr "予約完了"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Success Cancel Booking"
+msgstr "キャンセル完了"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Success Booking Change"
+msgstr "変更完了"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Booking No Change"
+msgstr "予約の変更なし"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Login Error"
+msgstr "ログインエラー"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Day Slot Nothing"
+msgstr "予約枠がありません"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Enough Slot Nothing"
+msgstr "予約枠が一杯です"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "The Day Full "
+msgstr "一日満席"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Reserve Seet Full "
+msgstr "予約席満席"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Target Nothing"
+msgstr "予約対象がありません"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Inside Error"
+msgstr "内部エラー"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Setting Target Title"
+msgstr "予約対象タイトル設定"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Guest Count"
+msgstr "ゲストカウント"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Reserve Date"
+msgstr "予約日"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Calendar settings"
+msgstr "カレンダー設定"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Show Holiday"
+msgstr "祝日表示"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Enough Border"
+msgstr "満席のボーダー"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Choose Enough Remaind Cell"
+msgstr "十分な数の残りのセルを選択してください。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Background color"
+msgstr "背景色"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Choose Low Remaind Cell"
+msgstr "残量が少ないセルを選択する"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Choose Empty Cell"
+msgstr "空のセルを選択"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Choose Close Cell"
+msgstr "休業日を選択"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Remaind Display type"
+msgstr "リマインダー表示タイプ"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Number Display"
+msgstr "番号表示"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Sign"
+msgstr "サイン"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Rest Display"
+msgstr "休業表示"
+
+#: build/blocks/reservation-block/view.js:1
+msgid "Sending..."
+msgstr "送信中..."
+
+#: build/blocks/reservation-block/view.js:1
+msgid "Operation Complete"
+msgstr "操作完了"
+
+#: build/blocks/reservation-block/block.json
+#: src/blocks/reservation-block/block.json
+msgctxt "block title"
+msgid "RESERVATION BLOCK"
+msgstr ""
