@@ -144,11 +144,6 @@ final class SlotsAPI extends BaseReserve
             'permission_callback' => [__CLASS__, 'can_manage_slots'], // 管理者権限チェック
         ]);
 
-        register_rest_route('itmar/v1', '/generate-spans', [
-            'methods'             => 'POST',
-            'callback'            => [__CLASS__, 'handle_generate_spans'],
-            'permission_callback' => [__CLASS__, 'can_manage_slots'],
-        ]);
     }
 
     public static function create_tables(): void
@@ -177,6 +172,7 @@ final class SlotsAPI extends BaseReserve
             slot_date DATE NOT NULL,
             created_at DATETIME NOT NULL,
             updated_at DATETIME NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'open',
             PRIMARY KEY  (id),
             UNIQUE KEY resource_date (resource_id, slot_date),
             KEY slot_date (slot_date),
@@ -230,6 +226,7 @@ final class SlotsAPI extends BaseReserve
 
     public static function list_slots(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom slot tables have no WordPress query API; availability must be returned from current data.
         global $wpdb;
 
         $table_slots = $wpdb->prefix . 'itmar_reservation_slots';
@@ -241,26 +238,16 @@ final class SlotsAPI extends BaseReserve
         $to   = (string) $request->get_param('to');
 
         if ($resource_id <= 0) {
-            return new WP_Error('invalid_resource_id', 'resource_id is required.', ['status' => 400]);
+            return new WP_Error('invalid_resource_id', __('A resource ID is required.', 'itmaroon-booking-block'), ['status' => 400]);
         }
 
-        // 基本となるWHERE句
-        $where = "WHERE s.resource_id = %d";
-        $params = [$resource_id];
-
-        // 期間指定（任意）
-        if ($from && self::validate_date_yyyy_mm_dd($from)) {
-            $where .= " AND s.slot_date >= %s";
-            $params[] = $from;
-        }
-        if ($to && self::validate_date_yyyy_mm_dd($to)) {
-            $where .= " AND s.slot_date <= %s";
-            $params[] = $to;
-        }
+        // 不正な期間指定は未指定として扱う
+        $from = ($from && self::validate_date_yyyy_mm_dd($from)) ? $from : '';
+        $to   = ($to && self::validate_date_yyyy_mm_dd($to)) ? $to : '';
 
         // SQL組み立て：親(s) → 子(d) → ユニット名(u) を結合
         // 予約枠がない日も考慮して LEFT JOIN を使用
-        $sql = $wpdb->prepare(
+        $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT 
             s.id AS slot_id,
             s.slot_date,
@@ -273,16 +260,24 @@ final class SlotsAPI extends BaseReserve
             d.end_time,
             d.is_booked,
             d.status AS detail_status
-         FROM {$table_slots} AS s
-         LEFT JOIN {$table_details} AS d ON s.id = d.slot_id
-         LEFT JOIN {$table_units} AS u ON d.unit_id = u.id
-         {$where}
+         FROM %i AS s
+         LEFT JOIN %i AS d ON s.id = d.slot_id
+         LEFT JOIN %i AS u ON d.unit_id = u.id
+         WHERE s.resource_id = %d
+         AND (%s = '' OR s.slot_date >= %s)
+         AND (%s = '' OR s.slot_date <= %s)
          ORDER BY s.slot_date ASC, d.start_time ASC, u.id ASC",
-            ...$params
-        );
-
-        $rows = $wpdb->get_results($sql, ARRAY_A);
+            $table_slots,
+            $table_details,
+            $table_units,
+            $resource_id,
+            $from,
+            $from,
+            $to,
+            $to
+        ), ARRAY_A);
         // フロントエンドで扱いやすいように、型を調整して返却
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return rest_ensure_response(array_map(function ($row) {
             return [
                 'slot_id'      => (int)$row['slot_id'],
@@ -301,6 +296,7 @@ final class SlotsAPI extends BaseReserve
 
     public static function upsert_slot(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom slot-table writes and their verification reads must use the current database state.
         global $wpdb;
 
         $table = $wpdb->prefix . 'itmar_reservation_slots';
@@ -310,10 +306,10 @@ final class SlotsAPI extends BaseReserve
 
 
         if ($resource_id <= 0) {
-            return new WP_Error('invalid_resource_id', 'resource_id is required.', ['status' => 400]);
+            return new WP_Error('invalid_resource_id', __('A resource ID is required.', 'itmaroon-booking-block'), ['status' => 400]);
         }
         if (!self::validate_date_yyyy_mm_dd($slot_date)) {
-            return new WP_Error('invalid_slot_date', 'slot_date must be YYYY-MM-DD', ['status' => 400]);
+            return new WP_Error('invalid_slot_date', __('The slot date must use YYYY-MM-DD format.', 'itmaroon-booking-block'), ['status' => 400]);
         }
 
 
@@ -330,16 +326,16 @@ final class SlotsAPI extends BaseReserve
                     'updated_at' => $now_gmt,
                 ],
                 ['id' => $id],
-                ['%d', '%s', '%d', '%s', '%s'],
+                ['%d', '%s', '%s'],
                 ['%d']
             );
 
             if ($updated === false) {
-                return new WP_Error('db_update_failed', 'Failed to update slot.', ['status' => 500]);
+                return new WP_Error('db_update_failed', __('Failed to update the slot.', 'itmaroon-booking-block'), ['status' => 500]);
             }
-            $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $id), ARRAY_A);
+            $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM %i WHERE id = %d", $table, $id), ARRAY_A);
             if (!$row) {
-                return new WP_Error('not_found', 'Slot not found after update.', ['status' => 404]);
+                return new WP_Error('not_found', __('The slot was not found after the update.', 'itmaroon-booking-block'), ['status' => 404]);
             }
             return rest_ensure_response($row);
         }
@@ -349,44 +345,45 @@ final class SlotsAPI extends BaseReserve
          * UNIQUE(resource_id, slot_date) が前提
          * LAST_INSERT_ID を使って、既存行でも insert_id を取得します。
          */
-        $sql = $wpdb->prepare(
-            "INSERT INTO {$table}
+        $result = $wpdb->query($wpdb->prepare(
+            "INSERT INTO %i
 				(resource_id, slot_date, created_at, updated_at)
 			 VALUES
-				(%d, %s, %d, %s, %s, %s)
+				(%d, %s, %s, %s)
 			 ON DUPLICATE KEY UPDATE
 				
 				updated_at = VALUES(updated_at),
 				id = LAST_INSERT_ID(id)",
+            $table,
             $resource_id,
             $slot_date,
 
             $now_gmt,
             $now_gmt
-        );
-
-        $result = $wpdb->query($sql);
+        ));
         if ($result === false) {
-            return new WP_Error('db_insert_failed', 'Failed to upsert slot.', ['status' => 500]);
+            return new WP_Error('db_insert_failed', __('Failed to save the slot.', 'itmaroon-booking-block'), ['status' => 500]);
         }
 
         $new_id = (int) $wpdb->insert_id;
-        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $new_id), ARRAY_A);
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM %i WHERE id = %d", $table, $new_id), ARRAY_A);
 
         if (!$row) {
-            return new WP_Error('not_found', 'Slot not found after upsert.', ['status' => 404]);
+            return new WP_Error('not_found', __('The slot was not found after it was saved.', 'itmaroon-booking-block'), ['status' => 404]);
         }
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return rest_ensure_response($row);
     }
 
     public static function close_slot(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Closing a custom-table slot is a write operation and the verification read must be current.
         global $wpdb;
 
         $table = $wpdb->prefix . 'itmar_reservation_slots';
         $id = (int) $request->get_param('id');
         if ($id <= 0) {
-            return new WP_Error('invalid_id', 'Invalid id.', ['status' => 400]);
+            return new WP_Error('invalid_id', __('The slot ID is invalid.', 'itmaroon-booking-block'), ['status' => 400]);
         }
 
         // TODO: 予約テーブル導入後、booked が存在するなら close を拒否/要確認などの運用ルールを入れると安全
@@ -404,19 +401,21 @@ final class SlotsAPI extends BaseReserve
         );
 
         if ($updated === false) {
-            return new WP_Error('db_update_failed', 'Failed to close slot.', ['status' => 500]);
+            return new WP_Error('db_update_failed', __('Failed to close the slot.', 'itmaroon-booking-block'), ['status' => 500]);
         }
 
-        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $id), ARRAY_A);
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM %i WHERE id = %d", $table, $id), ARRAY_A);
         if (!$row) {
-            return new WP_Error('not_found', 'Slot not found.', ['status' => 404]);
+            return new WP_Error('not_found', __('The slot was not found.', 'itmaroon-booking-block'), ['status' => 404]);
         }
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return rest_ensure_response($row);
     }
 
     public static function bulk_upsert_slots(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Bulk creation uses custom tables in a transaction; unit and slot state must not be cached.
         global $wpdb;
         //テーブルのセット
         $table_slots = $wpdb->prefix . 'itmar_reservation_slots';
@@ -433,17 +432,31 @@ final class SlotsAPI extends BaseReserve
         $interval    = (int) $request->get_param('timeTravel'); // フロントの interval
         //パラメータのエラー処理
         if ($resource_id <= 0 || empty($dates)) {
-            return new WP_Error('invalid_params', 'Required params missing.', ['status' => 400]);
+            return new WP_Error('invalid_params', __('Required parameters are missing.', 'itmaroon-booking-block'), ['status' => 400]);
+        }
+
+        if (!is_array($dates)) {
+            return new WP_Error('invalid_dates', __('Dates must be an array.', 'itmaroon-booking-block'), ['status' => 400]);
+        }
+
+        $dates = array_values(array_unique(array_filter(array_map('sanitize_text_field', $dates), [__CLASS__, 'validate_date_yyyy_mm_dd'])));
+        if (empty($dates)) {
+            return new WP_Error('invalid_dates', __('No valid dates were provided.', 'itmaroon-booking-block'), ['status' => 400]);
+        }
+
+        if (!$is_allday && (!self::validate_time_hh_mm($start_time) || !self::validate_time_hh_mm($end_time) || $start_time >= $end_time || $interval <= 0)) {
+            return new WP_Error('invalid_time_range', __('A valid time range and interval are required.', 'itmaroon-booking-block'), ['status' => 400]);
         }
 
         // 1. まず、このリソースに紐づく「有効なユニット」を取得しておく
         $units = $wpdb->get_results($wpdb->prepare(
-            "SELECT id FROM {$table_units} WHERE resource_id = %d AND is_active = 1",
+            "SELECT id FROM %i WHERE resource_id = %d AND is_active = 1",
+            $table_units,
             $resource_id
         ));
 
         if (empty($units)) {
-            return new WP_Error('no_units', 'Resource units not found. Please set units first.', ['status' => 400]);
+            return new WP_Error('no_units', __('No resource units were found. Add a unit first.', 'itmaroon-booking-block'), ['status' => 400]);
         }
 
         $now_gmt = current_time('mysql', true);
@@ -457,9 +470,10 @@ final class SlotsAPI extends BaseReserve
             foreach ($dates as $slot_date) {
                 // ① 親スロットの作成/更新 (ON DUPLICATE KEY UPDATE)
                 $wpdb->query($wpdb->prepare(
-                    "INSERT INTO {$table_slots} (resource_id, slot_date, created_at, updated_at)
+                    "INSERT INTO %i (resource_id, slot_date, created_at, updated_at)
                  VALUES (%d, %s, %s, %s)
                  ON DUPLICATE KEY UPDATE updated_at = VALUES(updated_at)",
+                    $table_slots,
                     $resource_id,
                     $slot_date,
                     $now_gmt,
@@ -468,7 +482,8 @@ final class SlotsAPI extends BaseReserve
 
                 // 作成または既存の slot_id を取得
                 $slot_id = $wpdb->get_var($wpdb->prepare(
-                    "SELECT id FROM {$table_slots} WHERE resource_id = %d AND slot_date = %s",
+                    "SELECT id FROM %i WHERE resource_id = %d AND slot_date = %s",
+                    $table_slots,
                     $resource_id,
                     $slot_date
                 ));
@@ -483,7 +498,8 @@ final class SlotsAPI extends BaseReserve
 
                         // INSERT IGNORE を使い、重複があれば何もしない（エラーも出さない）
                         $wpdb->query($wpdb->prepare(
-                            "INSERT IGNORE INTO {$table_details} (slot_id, unit_id, start_time, end_time, is_booked, status) VALUES (%d, %d, %s, %s, %d, %s)",
+                            "INSERT IGNORE INTO %i (slot_id, unit_id, start_time, end_time, is_booked, status) VALUES (%d, %d, %s, %s, %d, %s)",
+                            $table_details,
                             $slot_id,
                             $unit->id,
                             '00:00:00',
@@ -494,18 +510,19 @@ final class SlotsAPI extends BaseReserve
                     }
                 } else {
                     // 時間指定の場合：インターバルで回して作成
-                    $current = strtotime($start_time);
-                    $last    = strtotime($end_time);
+                    $current = strtotime('1970-01-01 ' . $start_time . ' UTC');
+                    $last    = strtotime('1970-01-01 ' . $end_time . ' UTC');
 
                     while ($current < $last) {
                         $next = $current + ($interval * 60);
-                        $t_start = date('H:i:s', $current);
-                        $t_end   = date('H:i:s', $next);
+                        $t_start = gmdate('H:i:s', $current);
+                        $t_end   = gmdate('H:i:s', $next);
 
                         foreach ($units as $unit) {
                             // ここも INSERT IGNORE で「あればスキップ」を実現
                             $wpdb->query($wpdb->prepare(
-                                "INSERT IGNORE INTO {$table_details} (slot_id, unit_id, start_time, end_time, is_booked, status) VALUES (%d, %d, %s, %s, %d, %s)",
+                                "INSERT IGNORE INTO %i (slot_id, unit_id, start_time, end_time, is_booked, status) VALUES (%d, %d, %s, %s, %d, %s)",
+                                $table_details,
                                 $slot_id,
                                 $unit->id,
                                 $t_start,
@@ -523,9 +540,10 @@ final class SlotsAPI extends BaseReserve
             $wpdb->query('COMMIT');
         } catch (\Throwable $e) {
             $wpdb->query('ROLLBACK');
-            return new WP_Error('bulk_failed', $e->getMessage(), ['status' => 400]);
+            return new WP_Error('bulk_failed', __('The slots could not be created.', 'itmaroon-booking-block'), ['status' => 500]);
         }
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return rest_ensure_response([
             'processed' => count($dates),
             'status' => 'success'
@@ -543,6 +561,7 @@ final class SlotsAPI extends BaseReserve
      */
     public static function save_resource_units(int $resource_id, array $units): bool
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Resource units are stored in a custom table and this method only performs writes.
         global $wpdb;
         $table_name = $wpdb->prefix . 'itmar_resource_units';
 
@@ -555,14 +574,25 @@ final class SlotsAPI extends BaseReserve
             // すでに ID があるものはスキップ（既存データ）
             if (!empty($unit['id'])) continue;
 
+            $name = isset($unit['name']) ? sanitize_text_field($unit['name']) : '';
+            $min_capacity = isset($unit['min']) ? absint($unit['min']) : 0;
+            $max_capacity = isset($unit['max']) ? absint($unit['max']) : 0;
+
+            if ('' === $name || $min_capacity < 1 || $max_capacity < $min_capacity) {
+                return false;
+            }
+
+            $now = current_time('mysql');
+
             $result = $wpdb->insert(
                 $table_name,
                 [
                     'resource_id'  => $resource_id,
-                    'name'         => sanitize_text_field($unit['name']),
-                    'min_capacity' => absint($unit['min']),
-                    'max_capacity' => absint($unit['max']),
-                    'created_at'   => current_time('mysql'),
+                    'name'         => $name,
+                    'min_capacity' => $min_capacity,
+                    'max_capacity' => $max_capacity,
+                    'created_at'   => $now,
+                    'updated_at'   => $now,
                 ],
                 [
                     '%d', // resource_id
@@ -570,33 +600,37 @@ final class SlotsAPI extends BaseReserve
                     '%d', // min_capacity
                     '%d', // max_capacity
                     '%s', // created_at
+                    '%s', // updated_at
                 ]
             );
 
             if ($result === false) {
                 // インサート失敗時のログ出力など（必要に応じて）
-                error_log("Failed to insert resource unit for ID: {$resource_id}");
                 return false;
             }
         }
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return true;
     }
 
     // リソースユニット呼び出しのコールバック関数
     public static function get_resource_units(\WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom resource-unit data has no WordPress query API and callers require the latest configuration.
         global $wpdb;
         $resource_id = (int) $request['id'];
         $table_units = $wpdb->prefix . 'itmar_resource_units';
 
         $units = $wpdb->get_results($wpdb->prepare(
             "SELECT id, name, min_capacity as min, max_capacity as max 
-         FROM {$table_units} 
+         FROM %i 
          WHERE resource_id = %d AND is_active = 1",
+            $table_units,
             $resource_id
         ), ARRAY_A);
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return rest_ensure_response($units);
     }
 
@@ -638,6 +672,7 @@ final class SlotsAPI extends BaseReserve
      */
     public static function handle_update_resource_unit(\WP_REST_Request $request): \WP_REST_Response
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Updating a custom resource-unit table is a write operation and is not cacheable.
         global $wpdb;
         $id = (int) $request->get_param('id');
         $table_units = $wpdb->prefix . 'itmar_resource_units';
@@ -669,6 +704,7 @@ final class SlotsAPI extends BaseReserve
             return new \WP_REST_Response(['success' => true, 'message' => __('Unit updated.', "itmaroon-booking-block")], 200);
         }
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return new \WP_REST_Response(['success' => false, 'message' => __('Update failed.', "itmaroon-booking-block")], 500);
     }
 
@@ -677,6 +713,7 @@ final class SlotsAPI extends BaseReserve
      */
     public static function handle_delete_resource_unit(\WP_REST_Request $request): \WP_REST_Response
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Deletion checks and writes use custom inventory tables and must read current booking state.
         global $wpdb;
         $id = (int) $request->get_param('id');
         $table_units = $wpdb->prefix . 'itmar_resource_units';
@@ -684,7 +721,8 @@ final class SlotsAPI extends BaseReserve
 
         // 1. すでに「予約済み」のデータがあるか確認
         $booked_count = $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$table_details} WHERE unit_id = %d AND is_booked = 1",
+            "SELECT COUNT(*) FROM %i WHERE unit_id = %d AND is_booked = 1",
+            $table_details,
             $id
         ));
 
@@ -705,12 +743,14 @@ final class SlotsAPI extends BaseReserve
             return new \WP_REST_Response(['success' => true, 'message' => __('The frame associated with the unit has been removed.', "itmaroon-booking-block")], 200);
         }
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return new \WP_REST_Response(['success' => false, 'message' => __('A database error occurred.', "itmaroon-booking-block")], 500);
     }
 
     //スロット詳細を編集するメソッド
     public static function handle_update_slot_detail(\WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Updating live availability in a custom slot-detail table is not cacheable.
         global $wpdb;
         $id = (int) $request['id'];
         $table_details = $wpdb->prefix . 'itmar_slot_details';
@@ -726,18 +766,20 @@ final class SlotsAPI extends BaseReserve
             ['%d']
         );
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return rest_ensure_response(['success' => ($result !== false)]);
     }
 
     // スロット詳細を編集するメソッド（まとめて処理）
     public static function handle_bulk_update_slot_details(\WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Transactional writes to custom slot-detail inventory must not be cached.
         global $wpdb;
         $table_details = $wpdb->prefix . 'itmar_slot_details';
         $updates = $request->get_param('updates'); // [{id, is_booked, status}, ...]
 
         if (!is_array($updates)) {
-            return new \WP_Error('invalid_data', 'Updates must be an array.', ['status' => 400]);
+            return new \WP_Error('invalid_data', __('Updates must be an array.', 'itmaroon-booking-block'), ['status' => 400]);
         }
 
         $wpdb->query('START TRANSACTION');
@@ -758,9 +800,10 @@ final class SlotsAPI extends BaseReserve
             $wpdb->query('COMMIT');
         } catch (\Exception $e) {
             $wpdb->query('ROLLBACK');
-            return new \WP_Error('db_error', $e->getMessage(), ['status' => 500]);
+            return new \WP_Error('db_error', __('The slot details could not be updated.', 'itmaroon-booking-block'), ['status' => 500]);
         }
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return rest_ensure_response(['success' => true, 'updated_count' => count($updates)]);
     }
 
@@ -769,6 +812,7 @@ final class SlotsAPI extends BaseReserve
      */
     public static function handle_bulk_delete_slot_details(\WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Transactional deletion uses custom inventory tables and must check current booking state.
         global $wpdb;
         $table_details = $wpdb->prefix . 'itmar_slot_details';
         $table_slots   = $wpdb->prefix . 'itmar_reservation_slots';
@@ -785,32 +829,42 @@ final class SlotsAPI extends BaseReserve
             return new WP_Error('no_ids', __('The ID to be deleted has not been specified.', "itmaroon-booking-block"), ['status' => 400]);
         }
 
-        // セキュリティ：すべてのIDを数値型に変換（SQLインジェクション対策）
-        $detail_ids = array_map('intval', $detail_ids);
+        // セキュリティ：すべてのIDを正の整数に正規化（SQLインジェクション対策）
+        $detail_ids = array_values(array_filter(wp_parse_id_list($detail_ids)));
+        if (empty($detail_ids)) {
+            return new WP_Error('no_ids', __('No valid IDs were provided.', 'itmaroon-booking-block'), ['status' => 400]);
+        }
         $placeholders = implode(',', array_fill(0, count($detail_ids), '%d'));
 
         // 【追加】削除対象の中に「予約済み」が含まれていないかチェック
-        $check_query = $wpdb->prepare(
-            "SELECT COUNT(*) FROM $table_details WHERE id IN ($placeholders) AND is_booked = 1",
-            ...$detail_ids
-        );
-        $booked_count = (int)$wpdb->get_var($check_query);
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
+        $booked_count = (int)$wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM %i WHERE id IN ($placeholders) AND is_booked = 1",
+            array_merge([$table_details], $detail_ids)
+        ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         if ($booked_count > 0) {
             return new WP_Error(
                 'has_bookings',
-                sprintf(__('This slot cannot be deleted because it contains %d reserved slots.', "itmaroon-booking-block"), $booked_count),
+                sprintf(
+                    /* translators: %d: Number of reserved slots that prevent deletion. */
+                    __('This slot cannot be deleted because it contains %d reserved slots.', 'itmaroon-booking-block'),
+                    $booked_count
+                ),
                 ['status' => 403]
             );
         }
 
         // 親ID（slot_id）を特定しておく
         // 子レコードを消す前に、どの親に紐付いているかを把握します
-        $get_slot_ids_query = $wpdb->prepare(
-            "SELECT DISTINCT slot_id FROM $table_details WHERE id IN ($placeholders)",
-            ...$detail_ids
-        );
-        $slot_ids = $wpdb->get_col($get_slot_ids_query);
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
+        $slot_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT DISTINCT slot_id FROM %i WHERE id IN ($placeholders)",
+            array_merge([$table_details], $detail_ids)
+        ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+        $slot_ids = array_values(array_filter(wp_parse_id_list($slot_ids)));
 
         // 3. 削除実行（トランザクション的に処理するのが理想）
         $wpdb->query('START TRANSACTION');
@@ -818,19 +872,26 @@ final class SlotsAPI extends BaseReserve
         // 削除実行
         try {
             // 子レコードを削除
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
             $wpdb->query($wpdb->prepare(
-                "DELETE FROM $table_details WHERE id IN ($placeholders)",
-                ...$detail_ids
+                "DELETE FROM %i WHERE id IN ($placeholders)",
+                array_merge([$table_details], $detail_ids)
             ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-            // 親レコードを削除
+            // 子レコードがすべてなくなった親レコードだけを削除。
             if (!empty($slot_ids)) {
-                //複数の親スロットが検出されているのであれば一括削除
                 $slot_placeholders = implode(',', array_fill(0, count($slot_ids), '%d'));
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Placeholders are generated from validated integer IDs.
                 $wpdb->query($wpdb->prepare(
-                    "DELETE FROM $table_slots WHERE id IN ($slot_placeholders)",
-                    ...$slot_ids
+                    "DELETE FROM %i
+                    WHERE id IN ($slot_placeholders)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM %i WHERE %i.slot_id = %i.id
+                    )",
+                    array_merge([$table_slots, $table_details, $table_details, $table_slots], $slot_ids)
                 ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
             } elseif ($resource_id && $sel_date) {
                 //日付の指定による削除も行う
                 $wpdb->delete(
@@ -846,12 +907,18 @@ final class SlotsAPI extends BaseReserve
             $wpdb->query('COMMIT');
         } catch (\Exception $e) {
             $wpdb->query('ROLLBACK');
-            return new \WP_Error('db_error', '削除中にエラーが発生しました。', ['status' => 500]);
+            return new \WP_Error('db_error', __('An error occurred while deleting the slots.', 'itmaroon-booking-block'), ['status' => 500]);
         }
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return [
             'success' => true,
             'deleted_count' => count($detail_ids),
         ];
+    }
+
+    private static function validate_time_hh_mm($time): bool
+    {
+        return is_string($time) && 1 === preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time);
     }
 }

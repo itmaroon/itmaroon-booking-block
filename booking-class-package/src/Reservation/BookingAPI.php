@@ -22,6 +22,13 @@ final class BookingAPI extends BaseReserve
         add_action('rest_api_init', [__CLASS__, 'register_routes']);
     }
 
+    public static function activate(): void
+    {
+        global $wpdb;
+
+        self::maybe_create_bookings_table($wpdb->prefix . 'itmar_bookings');
+    }
+
     public static function register_routes(): void
     {
 
@@ -78,6 +85,7 @@ final class BookingAPI extends BaseReserve
      */
     public static function create_booking(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom booking tables require direct queries; live availability and row locks must not be cached.
         global $wpdb;
 
         $table_bookings = $wpdb->prefix . 'itmar_bookings';
@@ -85,13 +93,10 @@ final class BookingAPI extends BaseReserve
         $table_slot_details = $wpdb->prefix . 'itmar_slot_details';
         $table_units   = $wpdb->prefix . 'itmar_resource_units';
 
-        // 1. テーブルが存在しない場合は作成（dbDeltaを使用）
-        self::maybe_create_bookings_table($table_bookings);
-
         // パラメータ取得
         // 数値は intval() で整数化（これが最強のサニタイズです）
-        $resource_id  = intval($request->get_param('resource_id'));
-        $guest_count  = intval($request->get_param('guest_count'));
+        $resource_id  = absint($request->get_param('resource_id'));
+        $guest_count  = absint($request->get_param('guest_count'));
 
         $is_same_unit = (bool) $request->get_param('is_same_unit');
 
@@ -108,12 +113,20 @@ final class BookingAPI extends BaseReserve
         // すでに秒まで含まれている可能性も考慮して整形します
         $start_time = (strlen($start_time_raw) === 5) ? $start_time_raw . ':00' : $start_time_raw;
 
+        if ($resource_id <= 0 || $guest_count <= 0) {
+            return new WP_Error('invalid_booking', __('A valid resource and guest count are required.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'errorInside']);
+        }
+
+        if (!self::validate_date($reserve_date) || !self::validate_time($start_time)) {
+            return new WP_Error('invalid_booking_time', __('The reservation date or time is invalid.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'errorInside']);
+        }
+
         // ユーザーIDの取得  
         $user_id = get_current_user_id();
 
         // フロントエンドでも制御しますが、念のためサーバー側でもブロック
         if (!$user_id) {
-            return new WP_Error('rest_not_logged_in', '予約にはログインが必要です。', ['status' => 401, 'info_code' => 'errorLogin']);
+            return new WP_Error('rest_not_logged_in', __('You must be logged in to make a reservation.', 'itmaroon-booking-block'), ['status' => 401, 'info_code' => 'errorLogin']);
         }
 
         // トランザクション開始
@@ -124,44 +137,64 @@ final class BookingAPI extends BaseReserve
 
         // 1. 親スロットID取得
         $slot_id = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$table_slots} WHERE resource_id = %d AND slot_date = %s",
+            "SELECT id FROM %i WHERE resource_id = %d AND slot_date = %s",
+            $table_slots,
             $resource_id,
             $reserve_date
         ));
 
         if (!$slot_id) {
-            $error = new WP_Error('no_slot', '指定された日のスロットが見つかりません。', ['status' => 404, 'info_code' => 'errorNoSlot']);
+            $error = new WP_Error('no_slot', __('No reservation slot was found for the selected date.', 'itmaroon-booking-block'), ['status' => 404, 'info_code' => 'errorNoSlot']);
         }
 
         if (!$error) {
             // 2. ユニット検索
-            $query = $wpdb->prepare(
-                "SELECT 
-                    d.id, 
-                    u.max_capacity 
-                FROM {$table_slot_details} AS d
-                INNER JOIN {$table_units} AS u ON d.unit_id = u.id
-                WHERE d.slot_id = %d 
-                AND d.start_time = %s 
-                AND d.is_booked = 0 
-                AND d.status = 'open'",
-                $slot_id,
-                $start_time
-            );
             // is_same_unit が "on" の場合、単体で guest_count を満たすユニットに絞り込む
             if ($is_same_unit) {
-                $query .= $wpdb->prepare(" AND u.max_capacity >= %d", $guest_count);
+                $available_units = $wpdb->get_results($wpdb->prepare(
+                    "SELECT
+                        d.id,
+                        u.max_capacity
+                    FROM %i AS d
+                    INNER JOIN %i AS u ON d.unit_id = u.id
+                    WHERE d.slot_id = %d
+                    AND d.start_time = %s
+                    AND d.is_booked = 0
+                    AND d.status = 'open'
+                    AND u.max_capacity >= %d
+                    ORDER BY u.max_capacity ASC
+                    FOR UPDATE",
+                    $table_slot_details,
+                    $table_units,
+                    $slot_id,
+                    $start_time,
+                    $guest_count
+                ));
+            } else {
+                $available_units = $wpdb->get_results($wpdb->prepare(
+                    "SELECT
+                        d.id,
+                        u.max_capacity
+                    FROM %i AS d
+                    INNER JOIN %i AS u ON d.unit_id = u.id
+                    WHERE d.slot_id = %d
+                    AND d.start_time = %s
+                    AND d.is_booked = 0
+                    AND d.status = 'open'
+                    ORDER BY u.max_capacity ASC
+                    FOR UPDATE",
+                    $table_slot_details,
+                    $table_units,
+                    $slot_id,
+                    $start_time
+                ));
             }
-            // 小さいユニットから順に当てる（大きなユニットを温存する戦略）
-            $query .= " ORDER BY u.max_capacity ASC FOR UPDATE";
-
-            $available_units = $wpdb->get_results($query);
 
             // 3. 予約判定ロジック
             $target_unit_ids = [];
             if ($is_same_unit) {
                 if (empty($available_units)) {
-                    $error = new WP_Error('no_unit', 'ご希望の人数を収容できる単一のユニットがありません。', ['status' => 400, 'info_code' => 'errorNoUnit']);
+                    $error = new WP_Error('no_unit', __('No single available unit can accommodate the requested number of guests.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'errorNoUnit']);
                 } else {
                     $target_unit_ids = [$available_units[0]->id];
                 }
@@ -173,7 +206,7 @@ final class BookingAPI extends BaseReserve
                     if ($current_capacity >= $guest_count) break;
                 }
                 if ($current_capacity < $guest_count) {
-                    $error = new WP_Error('insufficient_capacity', '合計の空き容量が不足しています。', ['status' => 400, 'info_code' => 'errorFull']);
+                    $error = new WP_Error('insufficient_capacity', __('There is not enough total capacity for this reservation.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'errorFull']);
                 }
             }
         }
@@ -186,17 +219,24 @@ final class BookingAPI extends BaseReserve
 
         // 4. 更新処理
         foreach ($target_unit_ids as $id) {
-            $wpdb->update(
-                "{$table_slot_details}",
+            $updated = $wpdb->update(
+                $table_slot_details,
                 ['is_booked' => 1],
-                ['id' => $id]
+                ['id' => $id],
+                ['%d'],
+                ['%d']
             );
+
+            if (false === $updated) {
+                $wpdb->query('ROLLBACK');
+                return new WP_Error('db_error', __('The reservation could not be saved.', 'itmaroon-booking-block'), ['status' => 500, 'info_code' => 'errorInside']);
+            }
         }
 
         // 確保した ID 配列をカンマ区切りの文字列にする
         $detail_ids_string = implode(',', array_map('intval', $target_unit_ids));
 
-        $wpdb->insert(
+        $inserted = $wpdb->insert(
             $table_bookings,
             [
                 'user_id'         => $user_id,
@@ -206,44 +246,89 @@ final class BookingAPI extends BaseReserve
                 'status'          => 'confirmed',
                 'created_at'      => current_time('mysql'),
                 'updated_at'      => current_time('mysql'),
-            ]
+            ],
+            ['%d', '%d', '%s', '%d', '%s', '%s', '%s']
         );
 
+        if (false === $inserted) {
+            $wpdb->query('ROLLBACK');
+            return new WP_Error('db_error', __('The reservation could not be saved.', 'itmaroon-booking-block'), ['status' => 500, 'info_code' => 'errorInside']);
+        }
+
         $wpdb->query('COMMIT');
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return new WP_REST_Response(['success' => true, 'info_code' => 'successBooking'], 200);
     }
 
     //予約レコードの削除
     public static function delete_bookings(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom booking tables require direct queries; deletion and seat release must use current locked data.
         global $wpdb;
-        $table_name = $wpdb->prefix . 'itmar_bookings';
+        $table_bookings = $wpdb->prefix . 'itmar_bookings';
+        $table_details = $wpdb->prefix . 'itmar_slot_details';
 
         // apiFetch経由なら get_param で直接取れます
         $ids = $request->get_param('ids');
 
         if (empty($ids) || !is_array($ids)) {
-            return new WP_REST_Response(['success' => false, 'message' => 'IDが指定されていません'], 400);
+            return new WP_REST_Response(['success' => false, 'message' => __('No booking IDs were provided.', 'itmaroon-booking-block')], 400);
         }
 
         // 数値の配列であることを保証
-        $ids = array_map('intval', $ids);
+        $ids = array_values(array_filter(wp_parse_id_list($ids)));
+        if (empty($ids)) {
+            return new WP_REST_Response(['success' => false, 'message' => __('No valid booking IDs were provided.', 'itmaroon-booking-block')], 400);
+        }
 
         // プレースホルダ文字列作成 (例: "%d,%d,%d")
         $placeholders = implode(',', array_fill(0, count($ids), '%d'));
 
-        // 修正ポイント：第2引数以降に配列の中身を展開して渡す
-        $query = $wpdb->prepare(
-            "DELETE FROM $table_name WHERE id IN ($placeholders)",
-            ...$ids // スプレッド演算子(...)で配列を展開
-        );
+        $wpdb->query('START TRANSACTION');
 
-        $result = $wpdb->query($query);
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
+        $bookings = $wpdb->get_results($wpdb->prepare(
+            "SELECT slot_detail_ids FROM %i WHERE id IN ($placeholders) AND status = 'confirmed' FOR UPDATE",
+            array_merge([$table_bookings], $ids)
+        ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-        if (false === $result) {
-            return new WP_REST_Response(['success' => false, 'message' => 'DBエラーが発生しました'], 500);
+        $detail_ids = [];
+        foreach ($bookings as $booking) {
+            $detail_ids = array_merge($detail_ids, array_map('absint', explode(',', $booking->slot_detail_ids)));
+        }
+        $detail_ids = array_values(array_unique(array_filter($detail_ids)));
+
+        if (!empty($detail_ids)) {
+            $detail_placeholders = implode(',', array_fill(0, count($detail_ids), '%d'));
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
+            $released = $wpdb->query($wpdb->prepare(
+                "UPDATE %i SET is_booked = 0 WHERE id IN ($detail_placeholders)",
+                array_merge([$table_details], $detail_ids)
+            ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+            if (false === $released) {
+                $wpdb->query('ROLLBACK');
+                return new WP_REST_Response(['success' => false, 'message' => __('A database error occurred.', 'itmaroon-booking-block')], 500);
+            }
         }
 
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
+        $result = $wpdb->query($wpdb->prepare(
+            "DELETE FROM %i WHERE id IN ($placeholders)",
+            array_merge([$table_bookings], $ids)
+        ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+        if (false === $result) {
+            $wpdb->query('ROLLBACK');
+            return new WP_REST_Response(['success' => false, 'message' => __('A database error occurred.', 'itmaroon-booking-block')], 500);
+        }
+
+        $wpdb->query('COMMIT');
+
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return new WP_REST_Response([
             'success' => true,
             'deleted_count' => $result,
@@ -258,15 +343,20 @@ final class BookingAPI extends BaseReserve
     //予約をキャンセルする
     public static function cancel_booking(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom booking tables require direct queries; cancellation must release seats from current locked data.
         global $wpdb;
         //パラメーターの取得
-        $booking_id = sanitize_text_field($request->get_param('id'));
+        $booking_id = absint($request->get_param('id'));
+
+        if ($booking_id <= 0) {
+            return new WP_Error('invalid_booking_id', __('A valid booking ID is required.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'errorNoTarget']);
+        }
 
         // 1. ユーザーチェック（門前払い）
         $user_id = get_current_user_id();
 
         if (!$user_id) {
-            return new WP_Error('rest_not_logged_in', 'ログインが必要です。', ['status' => 401, 'info_code' => 'errorLogin']);
+            return new WP_Error('rest_not_logged_in', __('You must be logged in.', 'itmaroon-booking-block'), ['status' => 401, 'info_code' => 'errorLogin']);
         }
 
 
@@ -278,28 +368,31 @@ final class BookingAPI extends BaseReserve
 
         // 2. 対象の予約が「本人のもの」か確認し、ロックをかける
         $booking = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, slot_detail_ids FROM {$table_bookings} WHERE id = %d AND user_id = %d AND status = 'confirmed' FOR UPDATE",
+            "SELECT id, slot_detail_ids FROM %i WHERE id = %d AND user_id = %d AND status = 'confirmed' FOR UPDATE",
+            $table_bookings,
             $booking_id,
             $user_id
         ));
 
         if (!$booking) {
             $wpdb->query('ROLLBACK');
-            return new WP_Error('no_booking_found', 'キャンセル可能な予約が見つかりませんでした。', ['status' => 404, 'info_code' => 'errorNoTarget']);
+            return new WP_Error('no_booking_found', __('No cancellable reservation was found.', 'itmaroon-booking-block'), ['status' => 404, 'info_code' => 'errorNoTarget']);
         }
 
         // 3. 在庫（itmar_slot_details）を解放
-        $slot_ids = array_map('intval', explode(',', $booking->slot_detail_ids));
+        $slot_ids = array_values(array_filter(wp_parse_id_list($booking->slot_detail_ids)));
         $placeholders = implode(',', array_fill(0, count($slot_ids), '%d'));
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
         $update_details_result = $wpdb->query($wpdb->prepare(
-            "UPDATE {$table_details} SET is_booked = 0 WHERE id IN ($placeholders)",
-            ...$slot_ids
+            "UPDATE %i SET is_booked = 0 WHERE id IN ($placeholders)",
+            array_merge([$table_details], $slot_ids)
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
         // false はクエリ自体の失敗（構文エラーや接続断など）
         if ($update_details_result === false) {
             $wpdb->query('ROLLBACK');
-            return new WP_Error('db_error', '在庫の解放に失敗しました。', ['status' => 500, 'info_code' => 'errorInside']);
+            return new WP_Error('db_error', __('The reserved capacity could not be released.', 'itmaroon-booking-block'), ['status' => 500, 'info_code' => 'errorInside']);
         }
 
         // 4. 予約ステータスをキャンセルに更新
@@ -319,12 +412,13 @@ final class BookingAPI extends BaseReserve
 
         if ($update_booking_result === false) {
             $wpdb->query('ROLLBACK');
-            return new WP_Error('db_error', '予約ステータスの更新に失敗しました。', ['status' => 500, 'info_code' => 'errorInside']);
+            return new WP_Error('db_error', __('The reservation status could not be updated.', 'itmaroon-booking-block'), ['status' => 500, 'info_code' => 'errorInside']);
         }
 
         // すべての処理が正常に終わったので確定
         $wpdb->query('COMMIT');
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return new WP_REST_Response([
             'success' => true,
             'info_code' => 'cancelSuccess'
@@ -334,18 +428,23 @@ final class BookingAPI extends BaseReserve
     //予約を変更する
     public static function change_booking(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom booking tables require direct queries; capacity changes and row locks must use live data.
         global $wpdb;
         //パラメーターの取得
-        $booking_id = sanitize_text_field($request->get_param('id'));
+        $booking_id = absint($request->get_param('id'));
 
-        $guest_count  = intval($request->get_param('guest_count'));
+        $guest_count  = absint($request->get_param('guest_count'));
         $is_same_unit = (bool) $request->get_param('is_same_unit');
+
+        if ($booking_id <= 0 || $guest_count <= 0) {
+            return new WP_Error('invalid_booking', __('A valid booking ID and guest count are required.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'errorInside']);
+        }
 
         // 1. ユーザーチェック（門前払い）
         $user_id = get_current_user_id();
 
         if (!$user_id) {
-            return new WP_Error('rest_not_logged_in', 'ログインが必要です。', ['status' => 401, 'info_code' => 'errorLogin']);
+            return new WP_Error('rest_not_logged_in', __('You must be logged in.', 'itmaroon-booking-block'), ['status' => 401, 'info_code' => 'errorLogin']);
         }
 
 
@@ -358,19 +457,20 @@ final class BookingAPI extends BaseReserve
 
         // 2. 現在の予約状況をロックして取得
         $booking = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, guest_count, slot_detail_ids FROM {$table_bookings} WHERE id = %d AND user_id = %d AND status = 'confirmed' FOR UPDATE",
+            "SELECT id, guest_count, slot_detail_ids FROM %i WHERE id = %d AND user_id = %d AND status = 'confirmed' FOR UPDATE",
+            $table_bookings,
             $booking_id,
             $user_id
         ));
 
         if (!$booking) {
             $wpdb->query('ROLLBACK');
-            return new WP_Error('no_booking', '変更対象の予約が見つかりません。', ['status' => 404, 'info_code' => 'errorNoTarget']);
+            return new WP_Error('no_booking', __('The reservation to change was not found.', 'itmaroon-booking-block'), ['status' => 404, 'info_code' => 'errorNoTarget']);
         }
 
         $old_count = intval($booking->guest_count);
         $diff = $guest_count - $old_count;
-        $current_detail_ids = array_map('intval', explode(',', $booking->slot_detail_ids));
+        $current_detail_ids = array_values(array_filter(wp_parse_id_list($booking->slot_detail_ids)));
 
         // 3. ロジック分岐：人数が変わっていない場合は何もしない
         if ($diff === 0) {
@@ -380,14 +480,16 @@ final class BookingAPI extends BaseReserve
 
         // 現在確保している各ユニットの詳細（特に定員：capacity）をDBから取得
         $placeholders_current = implode(',', array_fill(0, count($current_detail_ids), '%d'));
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Placeholders are generated from validated integer IDs.
         $current_units_info = $wpdb->get_results($wpdb->prepare(
             "SELECT d.id, u.max_capacity 
-             FROM {$table_details} d
-             JOIN {$table_units} u ON d.unit_id = u.id
+             FROM %i d
+             JOIN %i u ON d.unit_id = u.id
              WHERE d.id IN ($placeholders_current)
              ORDER BY d.id ASC",
-            ...$current_detail_ids
+            array_merge([$table_details, $table_units], $current_detail_ids)
         ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 
         $new_detail_ids = [];
         $release_ids = [];
@@ -408,11 +510,14 @@ final class BookingAPI extends BaseReserve
             }
 
             if (!empty($release_ids)) {
+                $release_ids = array_values(array_filter(wp_parse_id_list($release_ids)));
                 $release_placeholders = implode(',', array_fill(0, count($release_ids), '%d'));
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
                 $wpdb->query($wpdb->prepare(
-                    "UPDATE {$table_details} SET is_booked = 0 WHERE id IN ($release_placeholders)",
-                    ...$release_ids
+                    "UPDATE %i SET is_booked = 0 WHERE id IN ($release_placeholders)",
+                    array_merge([$table_details], $release_ids)
                 ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
             }
         } else {
             /**
@@ -423,19 +528,21 @@ final class BookingAPI extends BaseReserve
             if ($guest_count > $total_current_capacity) {
                 if ($is_same_unit) {
                     $wpdb->query('ROLLBACK');
-                    return new WP_Error('capacity_error', '予約中の席に追加できません。', ['status' => 400, 'info_code' => 'seetFull']);
+                    return new WP_Error('capacity_error', __('The current unit cannot accommodate additional guests.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'seetFull']);
                 }
 
                 $needed_extra = $guest_count - $total_current_capacity;
                 $first_detail_id = $current_detail_ids[0];
-                $slot_id = $wpdb->get_var($wpdb->prepare("SELECT slot_id FROM {$table_details} WHERE id = %d", $first_detail_id));
+                $slot_id = $wpdb->get_var($wpdb->prepare("SELECT slot_id FROM %i WHERE id = %d", $table_details, $first_detail_id));
                 // 同じ枠内の空きユニットを定員付きで取得
                 $available_units = $wpdb->get_results($wpdb->prepare(
                     "SELECT d.id, u.max_capacity 
-                     FROM {$table_details} d
-                     JOIN {$table_units} u ON d.unit_id = u.id
-                     WHERE d.slot_id = %d AND d.is_booked = 0 
+                     FROM %i d
+                     JOIN %i u ON d.unit_id = u.id
+                     WHERE d.slot_id = %d AND d.is_booked = 0 AND d.status = 'open'
                      ORDER BY u.max_capacity DESC FOR UPDATE",
+                    $table_details,
+                    $table_units,
                     $slot_id
                 ));
 
@@ -452,14 +559,17 @@ final class BookingAPI extends BaseReserve
 
                 if ($extra_capacity_secured < $needed_extra) {
                     $wpdb->query('ROLLBACK');
-                    return new WP_Error('no_vacancy', '追加の空き席が足りません。', ['status' => 400, 'info_code' => 'errorFull']);
+                    return new WP_Error('no_vacancy', __('There is not enough additional capacity.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'errorFull']);
                 }
 
+                $added_ids = array_values(array_filter(wp_parse_id_list($added_ids)));
                 $add_placeholders = implode(',', array_fill(0, count($added_ids), '%d'));
+                // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
                 $wpdb->query($wpdb->prepare(
-                    "UPDATE {$table_details} SET is_booked = 1 WHERE id IN ($add_placeholders)",
-                    ...$added_ids
+                    "UPDATE %i SET is_booked = 1 WHERE id IN ($add_placeholders)",
+                    array_merge([$table_details], $added_ids)
                 ));
+                // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
                 $new_detail_ids = array_merge($current_detail_ids, $added_ids);
             }
         }
@@ -478,10 +588,11 @@ final class BookingAPI extends BaseReserve
         );
         if ($update_res === false) {
             $wpdb->query('ROLLBACK');
-            return new WP_Error('db_error', '予約の更新に失敗しました。', ['status' => 500, 'info_code' => 'errorInside']);
+            return new WP_Error('db_error', __('The reservation could not be updated.', 'itmaroon-booking-block'), ['status' => 500, 'info_code' => 'errorInside']);
         }
 
         $wpdb->query('COMMIT');
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return new WP_REST_Response(['success' => true, 'info_code' => 'changeSuccess', 'new_count' => $guest_count], 200);
     }
 
@@ -490,17 +601,18 @@ final class BookingAPI extends BaseReserve
      */
     public static function get_user_bookings(WP_REST_Request $request)
     {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom booking tables have no WordPress query API; users must receive the current booking status.
         global $wpdb;
         $user_id = get_current_user_id();
 
         // ログインチェック（念のため）
         if (!$user_id) {
-            return new WP_Error('rest_not_logged_in', 'ログインが必要です。', ['status' => 401, 'info_code' => 'errorLogin']);
+            return new WP_Error('rest_not_logged_in', __('You must be logged in.', 'itmaroon-booking-block'), ['status' => 401, 'info_code' => 'errorLogin']);
         }
 
         $resource_id = intval($request->get_param('resource_id'));
         if (!$resource_id) {
-            return new WP_Error('missing_resource_id', 'リソースIDが必要です。', ['status' => 400, 'info_code' => 'errorInside']);
+            return new WP_Error('missing_resource_id', __('A resource ID is required.', 'itmaroon-booking-block'), ['status' => 400, 'info_code' => 'errorInside']);
         }
 
         $table_bookings = $wpdb->prefix . 'itmar_bookings';
@@ -517,17 +629,21 @@ final class BookingAPI extends BaseReserve
                 b.guest_count,
                 b.slot_detail_ids AS slot_ids,
                 b.status AS booking_status
-            FROM {$table_bookings} AS b
+            FROM %i AS b
             -- 最初のユニットIDを数値として取り出して結合
-            INNER JOIN {$table_details} AS d ON d.id = CAST(SUBSTRING_INDEX(b.slot_detail_ids, ',', 1) AS UNSIGNED)
-            INNER JOIN {$table_slots} AS s ON d.slot_id = s.id
+            INNER JOIN %i AS d ON d.id = CAST(SUBSTRING_INDEX(b.slot_detail_ids, ',', 1) AS UNSIGNED)
+            INNER JOIN %i AS s ON d.slot_id = s.id
             WHERE b.user_id = %d 
             AND b.resource_id = %d
             ORDER BY s.slot_date ASC, d.start_time ASC",
+            $table_bookings,
+            $table_details,
+            $table_slots,
             $user_id,
             $resource_id
         ));
 
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
         return new WP_REST_Response($results, 200);
     }
 
@@ -548,14 +664,29 @@ final class BookingAPI extends BaseReserve
         slot_detail_ids text NOT NULL,
         guest_count int(11) NOT NULL DEFAULT 1,
         status varchar(50) NOT NULL DEFAULT 'confirmed',
-        created_at datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
-        updated_at datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+        created_at datetime NOT NULL,
+        updated_at datetime NOT NULL,
         PRIMARY KEY  (id),
-        KEY user_id (user_id)
+        KEY user_id (user_id),
         KEY resource_id (resource_id)
     ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+    }
+
+    private static function validate_date(string $date): bool
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return false;
+        }
+
+        [$year, $month, $day] = array_map('intval', explode('-', $date));
+        return checkdate($month, $day, $year);
+    }
+
+    private static function validate_time(string $time): bool
+    {
+        return 1 === preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/', $time);
     }
 }

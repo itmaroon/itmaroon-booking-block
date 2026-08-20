@@ -1,9 +1,9 @@
 <?php
 
 /**
- * Plugin Name:       ITMAROON BOOKING BLOCK
+ * Plugin Name:       ITMAROON Booking Block
  * Plugin URI:        https://itmaroon.net
- * Description:       We provide blocks with reservation management function.
+ * Description:       Provides a reservation calendar block with capacity and booking management.
  * Requires at least: 6.4
  * Requires PHP:      8.2
  * Version:           0.1.0
@@ -11,37 +11,56 @@
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       itmaroon-booking-block
- * Domain Path:       /languages 
+ * Domain Path:       /languages
  *
  * @package           itmar
  */
 
 
-//PHPファイルに対する直接アクセスを禁止
-if (!defined('ABSPATH')) exit;
-
-// プラグイン情報取得に必要なファイルを読み込む
-if (!function_exists('get_plugin_data')) {
-	require_once(ABSPATH . 'wp-admin/includes/plugin.php');
+// PHP ファイルへの直接アクセスを禁止します。
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
 
+// プラグインヘッダーの情報を取得するために読み込みます。
+if ( ! function_exists( 'get_plugin_data' ) ) {
+	require_once ABSPATH . 'wp-admin/includes/plugin.php';
+}
+
+// 複数プラグインに同系統の Composer パッケージが同梱された場合の
+// クラス衝突を避けるため、ITMAR の専用ローダーを使用します。
 require_once __DIR__ . '/vendor/itmar/loader-package/src/register_autoloader.php';
-$blocks_entry = new \Itmar\BlockClassPackage\ItmarEntryClass();
 
-use Itmar\BookingClassPackage\Reservation\SlotsAPI;
-use Itmar\BookingClassPackage\Reservation\BookingAPI;
+$itmaroon_booking_blocks_entry = new \Itmar\BlockClassPackage\ItmarEntryClass();
 
-// init は plugins_loaded などで
-add_action('plugins_loaded', function () {
-	SlotsAPI::init();
-	BookingAPI::init();
-});
+/**
+ * Register REST API hooks.
+ */
+function itmaroon_booking_block_load_rest_api() {
+	\Itmar\BookingClassPackage\Reservation\SlotsAPI::init();
+	\Itmar\BookingClassPackage\Reservation\BookingAPI::init();
+}
+add_action( 'plugins_loaded', 'itmaroon_booking_block_load_rest_api' );
 
-//ブロックの初期登録
-add_action('init', function () use ($blocks_entry) {
-	$plugin_data = get_plugin_data(__FILE__);
-	$blocks_entry->block_init($plugin_data['TextDomain'], __FILE__);
-});
+/**
+ * Register blocks provided by this plugin.
+ */
+function itmaroon_booking_block_register_blocks() {
+	global $itmaroon_booking_blocks_entry;
+	$plugin_data = get_plugin_data( __FILE__ );
 
-//Rest APIのルート設定
-register_activation_hook(__FILE__, [SlotsAPI::class, 'activate']);
+	$itmaroon_booking_blocks_entry->block_init(
+		$plugin_data['TextDomain'],
+		__FILE__
+	);
+}
+add_action( 'init', 'itmaroon_booking_block_register_blocks' );
+
+/**
+ * Create the custom tables used by the reservation APIs.
+ */
+function itmaroon_booking_block_activate() {
+	\Itmar\BookingClassPackage\Reservation\SlotsAPI::activate();
+	\Itmar\BookingClassPackage\Reservation\BookingAPI::activate();
+}
+register_activation_hook( __FILE__, 'itmaroon_booking_block_activate' );
