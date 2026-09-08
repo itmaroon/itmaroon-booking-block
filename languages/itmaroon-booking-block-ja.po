@@ -5,8 +5,8 @@ msgstr ""
 "Project-Id-Version: ITMAROON BOOKING BLOCK 0.1.0\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/itmaroon-booking-"
 "block\n"
-"POT-Creation-Date: 2026-08-14T12:35:54+02:00\n"
-"PO-Revision-Date: 2026-08-14 20:25+0900\n"
+"POT-Creation-Date: 2026-09-02T10:29:07+02:00\n"
+"PO-Revision-Date: 2026-09-02 17:49+0900\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: ja_JP\n"
@@ -18,7 +18,7 @@ msgstr ""
 
 #. Plugin Name of the plugin
 #: itmaroon-booking-block.php
-msgid "ITMAROON BOOKING BLOCK"
+msgid "ITMAROON Booking Block"
 msgstr ""
 
 #. Plugin URI of the plugin
@@ -28,65 +28,228 @@ msgstr ""
 
 #. Description of the plugin
 #: itmaroon-booking-block.php
-msgid "We provide blocks with reservation management function."
-msgstr "予約管理機能を提供するブロックです。"
+msgid ""
+"Provides a reservation calendar block with capacity and booking management."
+msgstr "定員管理や予約管理機能を備えた、予約カレンダーブロックを提供します。"
 
 #. Author of the plugin
 #: itmaroon-booking-block.php
 msgid "Web Creator ITmaroon"
 msgstr "WebクリエイターITmaroon"
 
+#: booking-class-package/src/Reservation/BookingAPI.php:117
+msgid "A valid resource and guest count are required."
+msgstr "有効なリソースおよびゲスト数が必要です。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:121
+msgid "The reservation date or time is invalid."
+msgstr "予約の日付または時間が無効です。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:129
+msgid "You must be logged in to make a reservation."
+msgstr "予約を行うには、ログインする必要があります。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:147
+msgid "No reservation slot was found for the selected date."
+msgstr "選択された日付の予約枠は見つかりませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:197
+msgid ""
+"No single available unit can accommodate the requested number of guests."
+msgstr "ご希望の人数を収容できるユニットはありません。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:209
+msgid "There is not enough total capacity for this reservation."
+msgstr "この予約には、枠が不足しています。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:232
+#: booking-class-package/src/Reservation/BookingAPI.php:255
+msgid "The reservation could not be saved."
+msgstr "予約を保存できませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:275
+msgid "No booking IDs were provided."
+msgstr "予約IDが提供されませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:281
+msgid "No valid booking IDs were provided."
+msgstr "有効な予約IDが提供されませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:313
+#: booking-class-package/src/Reservation/BookingAPI.php:326
+#: booking-class-package/src/Reservation/SlotsAPI.php:747
+msgid "A database error occurred."
+msgstr "データベースエラーが発生しました。"
+
 #. translators: %d: 削除された件数
-#: booking-class-package/src/Reservation/BookingAPI.php:252
+#: booking-class-package/src/Reservation/BookingAPI.php:337
 #, php-format
 msgid "%d cases data deleted."
 msgstr "%d 件のデータを削除"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:615
+#: booking-class-package/src/Reservation/BookingAPI.php:352
+msgid "A valid booking ID is required."
+msgstr "有効な予約IDが必要です。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:359
+#: booking-class-package/src/Reservation/BookingAPI.php:447
+#: booking-class-package/src/Reservation/BookingAPI.php:610
+msgid "You must be logged in."
+msgstr "ログインする必要があります。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:379
+msgid "No cancellable reservation was found."
+msgstr "キャンセル可能な予約は見つかりませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:395
+msgid "The reserved capacity could not be released."
+msgstr "予約済み枠を解放できませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:415
+msgid "The reservation status could not be updated."
+msgstr "予約状況を更新できませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:440
+msgid "A valid booking ID and guest count are required."
+msgstr "有効な予約IDと人数が必要です。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:468
+msgid "The reservation to change was not found."
+msgstr "変更対象の予約は見つかりませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:531
+msgid "The current unit cannot accommodate additional guests."
+msgstr "現在のユニットでは、追加のゲストをお迎えすることはできません。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:562
+msgid "There is not enough additional capacity."
+msgstr "十分な追加枠がありません。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:591
+msgid "The reservation could not be updated."
+msgstr "予約を更新できませんでした。"
+
+#: booking-class-package/src/Reservation/BookingAPI.php:615
+#: booking-class-package/src/Reservation/SlotsAPI.php:241
+#: booking-class-package/src/Reservation/SlotsAPI.php:309
+msgid "A resource ID is required."
+msgstr "リソースIDは必須です。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:312
+msgid "The slot date must use YYYY-MM-DD format."
+msgstr "スロットの日付は YYYY-MM-DD 形式である必要があります。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:334
+msgid "Failed to update the slot."
+msgstr "スロットの更新に失敗しました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:338
+msgid "The slot was not found after the update."
+msgstr "アップデート後、そのスロットは見つかりませんでした。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:365
+msgid "Failed to save the slot."
+msgstr "スロットの保存に失敗しました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:372
+msgid "The slot was not found after it was saved."
+msgstr "保存後、そのスロットは見つかりませんでした。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:386
+msgid "The slot ID is invalid."
+msgstr "スロットIDが無効です。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:404
+msgid "Failed to close the slot."
+msgstr "選択した日のスロットの読み込みに失敗しました。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:409
+msgid "The slot was not found."
+msgstr "スロットは見つかりませんでした。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:435
+msgid "Required parameters are missing."
+msgstr "必須パラメータが不足しています。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:439
+msgid "Dates must be an array."
+msgstr "作成する日付："
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:444
+msgid "No valid dates were provided."
+msgstr "無効なデータです。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:448
+msgid "A valid time range and interval are required."
+msgstr "有効な時間範囲と間隔が必要です。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:459
+msgid "No resource units were found. Add a unit first."
+msgstr ""
+"リソースユニットが見つかりませんでした。まずユニットを追加してください。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:543
+msgid "The slots could not be created."
+msgstr "スロットを作成できませんでした。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:649
 msgid "Invalid data provided."
 msgstr "無効なデータです。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:625
+#: booking-class-package/src/Reservation/SlotsAPI.php:659
 msgid "Units saved successfully."
 msgstr "ユニットが正常に保存されました。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:631
+#: booking-class-package/src/Reservation/SlotsAPI.php:665
 msgid "Database error occurred."
 msgstr "データベースエラーが発生しました。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:651
+#: booking-class-package/src/Reservation/SlotsAPI.php:686
 msgid "Name is required."
 msgstr "名前は必須です。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:669
+#: booking-class-package/src/Reservation/SlotsAPI.php:704
 msgid "Unit updated."
 msgstr "ユニットが更新されました。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:672
+#: booking-class-package/src/Reservation/SlotsAPI.php:708
 msgid "Update failed."
 msgstr "更新に失敗しました。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:694
+#: booking-class-package/src/Reservation/SlotsAPI.php:732
 msgid "This unit cannot be deleted because it is already reserved."
 msgstr "このユニットは既に予約されているため、削除できません。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:705
+#: booking-class-package/src/Reservation/SlotsAPI.php:743
 msgid "The frame associated with the unit has been removed."
 msgstr "そのユニットに関連する予約枠は取り外されました。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:708
-msgid "A database error occurred."
-msgstr "データベースエラーが発生しました。"
+#: booking-class-package/src/Reservation/SlotsAPI.php:782
+msgid "Updates must be an array."
+msgstr "更新内容は配列である必要があります。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:785
+#: booking-class-package/src/Reservation/SlotsAPI.php:803
+msgid "The slot details could not be updated."
+msgstr "スロットの詳細を更新できませんでした。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:829
 msgid "The ID to be deleted has not been specified."
 msgstr "削除するIDが指定されていません。"
 
-#: booking-class-package/src/Reservation/SlotsAPI.php:802
+#: booking-class-package/src/Reservation/SlotsAPI.php:835
+msgid "No valid IDs were provided."
+msgstr "無効なデータです。"
+
+#. translators: %d: Number of reserved slots that prevent deletion.
+#: booking-class-package/src/Reservation/SlotsAPI.php:852
 #, php-format
 msgid "This slot cannot be deleted because it contains %d reserved slots."
 msgstr ""
 "このスロットには %d 個の予約済みスロットが含まれているため、削除できません。"
+
+#: booking-class-package/src/Reservation/SlotsAPI.php:910
+msgid "An error occurred while deleting the slots."
+msgstr "スロットの削除中にエラーが発生しました。"
 
 #: build/blocks/reservation-block/index.js:1
 msgid "Detailed Edit"
@@ -276,7 +439,7 @@ msgstr "ユニット追加"
 
 #: build/blocks/reservation-block/index.js:2
 msgid "Add Num"
-msgstr "人数追加"
+msgstr "追加する数"
 
 #: build/blocks/reservation-block/index.js:2
 msgid "Unit updated successfully."
@@ -527,3 +690,6 @@ msgstr "操作完了"
 msgctxt "block title"
 msgid "RESERVATION BLOCK"
 msgstr ""
+
+#~ msgid "We provide blocks with reservation management function."
+#~ msgstr "予約管理機能を提供するブロックです。"

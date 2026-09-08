@@ -2,8 +2,8 @@
 Contributors:      itmaroon
 Tags:              booking, reservation, block
 Requires at least: 6.4
-Tested up to:      7.0
-Stable tag:        0.1.0
+Tested up to:      7.1
+Stable tag:        1.0.0
 Requires PHP:      8.2
 License:           GPL-2.0-or-later
 License URI:       https://www.gnu.org/licenses/gpl-2.0.html
@@ -32,6 +32,13 @@ The plugin stores reservation data in the site's WordPress database. It does not
 
 
 == Screenshots ==
+
+1. Enter a reservation using the calendar and timetable.
+2. List of completed reservations
+3. Reservation entry form
+4. Reservation Confirmation Form
+5. Notification of reservation confirmation. An email will be sent.
+
 
 == Changelog ==
 = 0.1.0 =

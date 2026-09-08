@@ -182,7 +182,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				},
 			};
 		},
-		[clientId, calendarTableId, bookingTableId],
+		[clientId, calendarTableId, timeTableId, bookingTableId],
 	);
 
 	// 使うときは分割代入で
@@ -489,7 +489,6 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		calendarFromInner?.attributes,
 		resourceId,
 		tableFromInner?.clientId,
-		reservatedInner?.clientId,
 		lastUpdated,
 		isHoliday,
 		enoughBorder,
@@ -509,6 +508,8 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	useEffect(() => {
 		// 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
 		if (!isInitialized) return;
+		// 終日予約など、時間テーブルを使用しない構成では何もしない
+		if (!timeFromInner) return;
 
 		const selDay = calendarFromInner?.attributes?.selectedValue;
 
@@ -518,7 +519,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			Object.keys(dailyStatsMap).length === 0 ||
 			selDay === 0
 		) {
-			updateBlockAttributes(timeFromInner?.clientId, {
+			updateBlockAttributes(timeFromInner.clientId, {
 				tableLayout: "fixed",
 				tableSource: [],
 			});
@@ -542,14 +543,53 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			renderStyle,
 		);
 
-		updateBlockAttributes(timeFromInner?.clientId, {
+		updateBlockAttributes(timeFromInner.clientId, {
 			tableLayout: "fixed",
 			tableSource: timetableSource,
 		});
 	}, [
 		isInitialized,
+		timeFromInner?.clientId,
 		dailyStatsMap,
 		calendarFromInner?.attributes?.selectedValue,
+		isHoliday,
+		enoughBorder,
+		enoughBgColor,
+		enoughGradient,
+		lowBgColor,
+		lowGradient,
+		emptyBgColor,
+		emptyGradient,
+		closeBgColor,
+		closeGradient,
+		remainDisp,
+		restDisp,
+	]);
+
+	//予約済みテーブルの列見出しを、時間テーブルの有無に合わせて補完する
+	useEffect(() => {
+		if (!reservatedInner) return;
+
+		const expectedHeadings = timeFromInner
+			? ["日付", "時間", "人数", "操作"]
+			: ["日付", "人数", "操作"];
+		const currentHeadings = (reservatedInner.attributes?.tableHeading ??
+			[]) as string[];
+
+		if (
+			reservatedInner.attributes?.is_heading !== true ||
+			tableSig(currentHeadings) !== tableSig(expectedHeadings)
+		) {
+			updateBlockAttributes(reservatedInner.clientId, {
+				is_heading: true,
+				tableHeading: expectedHeadings,
+			});
+		}
+	}, [
+		reservatedInner?.clientId,
+		reservatedInner?.attributes?.is_heading,
+		reservatedInner?.attributes?.tableHeading,
+		timeFromInner?.clientId,
 	]);
 
 	//予約済みデータの表示
@@ -685,7 +725,12 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		runReservationDataGet().catch((e: unknown) =>
 			console.error("get reservation -> get reservation data failed:", e),
 		);
-	}, [isInitialized, resourceId, reservatedInner?.clientId]);
+	}, [
+		isInitialized,
+		resourceId,
+		reservatedInner?.clientId,
+		reservatedInner?.attributes?.tableHeading,
+	]);
 
 	//予定表上のテーブルをクリックしたときの処理
 	useEffect(() => {
@@ -774,7 +819,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				timeTravel: travel,
 			};
 
-			const result = await apiFetch<BulkResult>({
+			await apiFetch<BulkResult>({
 				path: "/itmar/v1/slots/bulk",
 				method: "POST",
 				data: payload,
@@ -783,7 +828,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 			setMonthNotice({
 				status: "success",
 				message: __(
-					`Processed: ${result.processed} (inserted: ${result.inserted}, updated: ${result.updated}, unchanged: ${result.unchanged})`,
+					"Monthly reservation slots have been saved. Please reselect the resource, then reload the editor to display the latest data.",
 					"itmaroon-booking-block",
 				),
 			});
@@ -947,11 +992,23 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	const requestSeqRef = useRef<number>(0);
 
 	//テーブルのIdentification ID
-	const tableOptions =
-		displayTables?.map((table) => ({
-			label: table.attributes.defineID || "No ID", // 表示名（空の場合のフォールバック）
-			value: table.attributes.defineID, // 保存される値
-		})) || [];
+	const tableOptions = [
+		{
+			label: __("Not used", "itmaroon-booking-block"),
+			value: "",
+		},
+		...(displayTables
+			?.filter((table) => Boolean(table.attributes.defineID))
+			.map((table) => ({
+				label: table.attributes.defineID,
+				value: table.attributes.defineID,
+			})) || []),
+	];
+	const availableTableIds = new Set(
+		tableOptions.map((option) => option.value).filter(Boolean),
+	);
+	const selectedTableId = (value: string): string =>
+		availableTableIds.has(value) ? value : "";
 
 	// unitList から SelectControl 用の options を作成
 	const unitOptions = [
@@ -1098,7 +1155,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				>
 					<SelectControl
 						label={__("Calendar Identification", "itmaroon-booking-block")}
-						value={calendarTableId}
+						value={selectedTableId(calendarTableId)}
 						options={tableOptions}
 						onChange={(val) => {
 							setAttributes({ calendarTableId: val });
@@ -1106,8 +1163,8 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 					/>
 
 					<SelectControl
-						label={__("TaimTable Identification", "itmaroon-booking-block")}
-						value={timeTableId}
+						label={__("Time Table Identification", "itmaroon-booking-block")}
+						value={selectedTableId(timeTableId)}
 						options={tableOptions}
 						onChange={(val) => {
 							setAttributes({ timeTableId: val });
@@ -1116,7 +1173,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 
 					<SelectControl
 						label={__("Booking Identification", "itmaroon-booking-block")}
-						value={bookingTableId}
+						value={selectedTableId(bookingTableId)}
 						options={tableOptions}
 						onChange={(val) => setAttributes({ bookingTableId: val })}
 					/>
