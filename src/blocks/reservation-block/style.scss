@@ -7,7 +7,36 @@
 @use "./reset.scss" as reset;
 
 .wp-block-itmar-reservation-block {
-	
+
+}
+
+/*
+ * design-table のサークルスタイルで作ったカレンダー。
+ * 選択日の円はセルの高さに合わせて中央に出るので、日付もセルの縦中央にそろえる。
+ */
+.wp-block-itmar-reservation-block .wp-block-itmar-design-table.is-style-circle .itmar_cell {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	/* セルの大きさは design-table の「セルの大きさ」で決める（インラインの min-height を打ち消す） */
+	min-height: 0 !important;
+}
+
+/* 時間帯テーブルで、空きのない（満席の）行は薄くして、押せないことを示す */
+.wp-block-itmar-reservation-block .wp-block-itmar-design-table td.is-full {
+	opacity: 0.5;
+}
+
+/*
+ * 月の前後にある日付のない空きセル（クラス itmar_cell_blank）は、背景も影も出さない。
+ * 日付のあるセルかどうかは、クラスのあるなしだけで判断する。
+ */
+.wp-block-itmar-reservation-block .wp-block-itmar-design-table td.itmar_cell_blank {
+	background: transparent !important;
+	box-shadow: none !important;
+	border-radius: 0 !important;
+	clip-path: none !important;
 }
 
 @keyframes shimmer {
@@ -17,4 +46,59 @@
   100% {
     background-position: 200% 0;
   }
+}
+
+/*
+ * 日付の色は、design-calender の休日・土曜の色に合わせる。
+ * 色の値は、予約ブロックが CSS 変数（--itmar-cal-holiday / --itmar-cal-saturday）で渡す。
+ */
+.wp-block-itmar-reservation-block .itmar_cell_day {
+	&.is-holiday {
+		color: var(--itmar-cal-holiday, inherit);
+	}
+
+	&.is-saturday {
+		color: var(--itmar-cal-saturday, inherit);
+	}
+}
+
+/* 選んだ日のセルは、design-table の「選択セル」の文字色を優先する */
+.wp-block-itmar-reservation-block td.currentSel .itmar_cell_day {
+	color: inherit;
+}
+
+/*
+ * 円形のカレンダーでは、祝日名と「定休日」の文字を出さない（日付の色と背景で示す）。
+ * 祝日名は、選んだ日の下に、曜日といっしょに出す（Selected Date Note）。
+ */
+.wp-block-itmar-reservation-block .wp-block-itmar-design-table.is-style-circle {
+	.itmar_cell_holiday,
+	.itmar_cell_rest {
+		display: none;
+	}
+}
+
+/* 曜日・祝日名のタイトルは、日付を選ぶまでは出さない（フロントで JS が付ける） */
+.wp-block-itmar-reservation-block .itmar_is_empty {
+	display: none;
+}
+
+/*
+ * モバイルでは、セルの幅が狭くて祝日名が何行にも折り返し、行の高さと空き状況の記号の位置が
+ * ずれる。祝日名は1行に収め、はみ出す分は省略（…）する。
+ */
+@include reset.mq(sp) {
+	.wp-block-itmar-reservation-block .itmar_cell {
+		min-width: 0;
+		overflow: hidden;
+	}
+
+	.wp-block-itmar-reservation-block .itmar_cell_holiday {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		/* 祝日名の長さで列の幅が広がらないように、中身の幅は0として数え、表示は枠いっぱいにする */
+		width: 0;
+		min-width: 100%;
+	}
 }

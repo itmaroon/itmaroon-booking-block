@@ -15,6 +15,7 @@ import {
 	buildTimeTableSource,
 } from "./createTableSource"; // 上で作った共通関数
 import { SlotRow, DayObject, userBooking, BookingResponse } from "./types";
+import { buildDateNote } from "./dateNote";
 
 jQuery(function ($) {
 	// ✅ 「1つの予約ブロック」ごとに初期化したいので、親ラッパーを推奨
@@ -101,6 +102,18 @@ jQuery(function ($) {
 			});
 		}
 
+		//日付の色は、design-calender の休日・土曜の色に合わせる
+		const calendarColors = ($calendar.data("attributes") ?? {}) as {
+			holidayColor?: string;
+			staturdayColor?: string;
+		};
+		if (calendarColors.holidayColor) {
+			element.style.setProperty("--itmar-cal-holiday", calendarColors.holidayColor);
+		}
+		if (calendarColors.staturdayColor) {
+			element.style.setProperty("--itmar-cal-saturday", calendarColors.staturdayColor);
+		}
+
 		//Design Titleの中味にデータ流し込むヘルパ
 		const enterTitle = (
 			$dateElm: JQuery<HTMLElement>,
@@ -116,12 +129,17 @@ jQuery(function ($) {
 		//日毎データを定義
 		let monthDailyObj: any = {};
 
+		//祝日の名前（日付 → 名前）。選んだ日の曜日・祝日名の表示に使う
+		let monthHolidays: Record<number, string> = {};
+
 		//リソース名
 		let resourceName: string = "";
 
 		async function refresh() {
 			const selectedMonth = $calendar.find(MONTH_SELECT).val() as string; // "YYYY/MM"
 			if (!selectedMonth) return;
+			// リソースが選ばれていない（テンプレートのパーツなど）ときは、何も取得しない
+			if (!resourceId) return;
 			//timeTableはいったん非表示
 			$timeTable.hide();
 
@@ -134,6 +152,17 @@ jQuery(function ($) {
 
 			// resourceId は save.js で data-attributesを出すのが最も安定
 			if (!resourceId) return;
+
+			//リソース名を、予約確認モーダルの外のタイトル（Resource Title）へ表示
+			if (dispUniqueIds.resourceTitle) {
+				const { id: resourceTitleId } = JSON.parse(dispUniqueIds.resourceTitle);
+				$root
+					.find(`[data-unique_id="${resourceTitleId}"]`)
+					.filter((_i, el) => !$reservation_modal.has(el).length)
+					.each(function () {
+						enterTitle($(this), resourceName);
+					});
+			}
 
 			//リソース名の表示
 			if (dispUniqueIds.resourceName) {
@@ -173,6 +202,7 @@ jQuery(function ($) {
 				calendarInfoObj.dataVal as DayObject[],
 				{
 					isMonday: false,
+					compactBlanks: true,
 					renderCell: renderBookingCellHtml,
 					renderStyle: {
 						isDispHoliday: renderStyle.isHoliday,
@@ -188,10 +218,21 @@ jQuery(function ($) {
 			);
 			//日毎データを確保
 			monthDailyObj = calendarInfoObj.dailyStats;
+			//祝日の名前を控える
+			monthHolidays = {};
+			(calendarInfoObj.dataVal as DayObject[]).forEach((dayObj) => {
+				if (dayObj.holiday) {
+					monthHolidays[Number(dayObj.date)] = String(dayObj.holiday);
+				}
+			});
 
 			//カレンダーテーブルの再レンダリング
 			const calendarTableElement = $calendarTable[0] || null;
 			renderTableFromTableSource(calendarTableElement, calendarSource);
+			//描き直すと日付の選択は外れるので、日付を選ぶ前の文言へ戻し、時間管理のパネルも閉じる
+			showSelectedDate();
+			showSelectedDateNote();
+			toggleTimePanel(false);
 
 			//予約済みテーブルの処理
 			if (itmar_option.isLoggedIn) {
@@ -234,6 +275,62 @@ jQuery(function ($) {
 		// 「親の親」にある #reservation_modal を探して表示させる
 		const $reservation_modal = $root.find(`#${confirmModal}`).parent().parent();
 
+		// 選択した日付を表示するタイトル（「Selected Date」の設定先）へ、日付か、日付を選ぶ前の文言を出す。
+		// date を渡さないときは、設定された文言（なければ空）にする。予約確認モーダルの中の同じIDのタイトルは対象外。
+		const showSelectedDate = (date?: string) => {
+			if (!dispUniqueIds.selectedDate) return;
+			const { id: selectedDateId } = JSON.parse(dispUniqueIds.selectedDate);
+			const $selectedDateElm = $root
+				.find(`[data-unique_id="${selectedDateId}"]`)
+				.filter((_i, el) => !$reservation_modal.has(el).length);
+			$selectedDateElm.each(function () {
+				const $elm = $(this);
+				const text = date
+					? displayFormated(
+							date,
+							$elm.data("user_format"),
+							$elm.data("free_format"),
+							$elm.data("decimal"),
+					  )
+					: renderStyle.selectedDatePlaceholder ?? "";
+				enterTitle($elm, text);
+				$elm.attr("data-value", date ?? "");
+			});
+		};
+		//日付を選ぶ前の文言を初期表示にする
+		if (renderStyle.selectedDatePlaceholder) {
+			showSelectedDate();
+		}
+
+		// 選んだ日の曜日と祝日名（祝日でなければ曜日だけ）を、「Selected Date Note」の設定先のタイトルへ出す。
+		// ymd を渡さないときは空にして、タイトルごと隠す。予約確認モーダルの中の同じIDのタイトルは対象外。
+		const showSelectedDateNote = (ymd?: string, holiday?: string) => {
+			if (!dispUniqueIds.selectedDateNote) return;
+			const { id: noteId } = JSON.parse(dispUniqueIds.selectedDateNote);
+			const text = ymd ? buildDateNote(ymd, holiday) : "";
+			$root
+				.find(`[data-unique_id="${noteId}"]`)
+				.filter((_i, el) => !$reservation_modal.has(el).length)
+				.each(function () {
+					const $elm = $(this);
+					enterTitle($elm, text);
+					$elm.toggleClass("itmar_is_empty", !text);
+				});
+		};
+		showSelectedDateNote();
+
+		// 時間管理のパネル（時間帯テーブルを含むメニューのグループ）を開閉する。
+		// モバイル幅でだけ開く（開閉の処理は design-group が持っていて、デスクトップでは何もしない）。
+		const toggleTimePanel = (open: boolean) => {
+			const panelId = $timeTable.closest(".itmar-wrap[id]").attr("id");
+			if (!panelId) return;
+			document.dispatchEvent(
+				new CustomEvent(open ? "itmar:menu-open" : "itmar:menu-close", {
+					detail: { id: panelId },
+				}),
+			);
+		};
+
 		// $calendarTable 内のセル（td）がクリックされた時のイベント（予約登録）
 		$calendarTable.on("click", "td", function () {
 			//選択された月を取得
@@ -252,6 +349,14 @@ jQuery(function ($) {
 
 			// 2. クリックされたセル（this）だけに "currentSel" クラスを追加
 			$clickedCell.addClass("currentSel");
+
+			//選択した日付を、設定されたタイトル（時間帯パネルの日付表示など）へ流し込む
+			const selectedDateStr = `${selectedMonth.replace(/\//g, "-")}-${String(
+				selDateNum,
+			).padStart(2, "0")}`;
+			showSelectedDate(selectedDateStr);
+			//曜日と祝日名（祝日でなければ曜日だけ）を、時間管理の日付の下へ
+			showSelectedDateNote(selectedDateStr, monthHolidays[selDateNum]);
 
 			//時間単位の情報が複数あるなら時間テーブルを表示して終了
 			if (Object.keys(monthDailyObj[selDateNum]).length > 1) {
@@ -276,6 +381,8 @@ jQuery(function ($) {
 				renderTableFromTableSource(timeTableElement, timetableSource);
 				//timeTableを表示
 				$timeTable.show();
+				//モバイルでは、時間管理のパネル（メニューのグループ）を引き出す
+				toggleTimePanel(true);
 				return;
 			} else {
 				//結合して YYYY-MM-DD 完成
@@ -309,6 +416,8 @@ jQuery(function ($) {
 
 			// 3. 結合して YYYY-MM-DD 完成
 			const formattedDate = `${yearMonth}-${dayPadded}`;
+			//確認モーダルより手前に重なるので、時間管理のパネルは先に閉じる
+			toggleTimePanel(false);
 			//モーダルを出す
 			comfirm_modal_disp(formattedDate, $clickedCell.data("time"));
 		});

@@ -3,7 +3,7 @@ Contributors:      itmaroon
 Tags:              booking, reservation, block
 Requires at least: 6.4
 Tested up to:      7.1
-Stable tag:        1.0.0
+Stable tag:        1.1.0
 Requires PHP:      8.2
 License:           GPL-2.0-or-later
 License URI:       https://www.gnu.org/licenses/gpl-2.0.html
@@ -41,10 +41,20 @@ The plugin stores reservation data in the site's WordPress database. It does not
 
 
 == Changelog ==
+= 1.1.0 =
+* New admin menu "Reservation Management": manage slots, resource units and bookings in the admin screen instead of the block editor.
+* Slots can be deleted a month at a time. The request is refused, with the dates that are the cause, when any slot is already booked.
+* Added ready-made block patterns: a reservation calendar with time slots and a reservation calendar by day.
+* Improved the Reservation block: the calendar, the time-slot panel and the confirmation dialog (a day-based reservation no longer shows a time).
+* Updated the Japanese translation.
+
 = 0.1.0 =
 * Initial release.
 
 == Upgrade Notice ==
+= 1.1.0 =
+Adds the "Reservation Management" admin screen and ready-made reservation patterns. No configuration changes are required.
+
 = 0.1.0 =
 Initial release.
 

@@ -23,6 +23,12 @@ interface TargetTite {
 	guestCount: string;
 	reserveDate: string;
 	reserveTime: string;
+	/** カレンダーで選んだ日付を表示するタイトル（時間帯パネルの日付表示など）。予約確認モーダルの外にある */
+	selectedDate?: string;
+	/** リソース名（店舗名など）を表示するタイトル。予約確認モーダルの外にある */
+	resourceTitle?: string;
+	/** 選んだ日の曜日と祝日名を表示するタイトル（予約確認モーダルの外） */
+	selectedDateNote?: string;
 }
 
 interface ButtonId {
@@ -61,6 +67,8 @@ export interface BookingAttributes {
 	closeGradient: string;
 	remainDisp: string;
 	restDisp: string;
+	/** 日付を選ぶ前に、「Selected Date」のタイトルへ出す文言。未設定なら空 */
+	selectedDatePlaceholder?: string;
 }
 
 /**
@@ -178,6 +186,8 @@ export interface BuildCalendarOptions {
 	headerFormatter?: (weekdayName: string) => string;
 	renderCell: (dayObj: DayObject, dayNum: number, extra?: any) => any;
 	renderStyle?: any;
+	/** 日付のないセルを減らす（週末の空きセルは出さず、週頭の空きセルは1つにまとめる）。フロント用 */
+	compactBlanks?: boolean;
 }
 
 /**

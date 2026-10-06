@@ -677,6 +677,32 @@ msgstr "サイン"
 msgid "Rest Display"
 msgstr "休業表示"
 
+#: build/blocks/reservation-block/index.js:2
+msgid "Reserve Time"
+msgstr "予約時間"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Selected Date (calendar)"
+msgstr "選択日（カレンダー）"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Shows the date chosen in the calendar in this title, outside the reservation dialog."
+msgstr "カレンダーで選んだ日付を、予約確認のダイアログの外にあるこのタイトルに表示します。"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Text before a date is selected"
+msgstr "日付を選ぶ前の文言"
+
+#: build/blocks/reservation-block/index.js:2
+msgid "Shown in the Selected Date title until a date is chosen in the calendar. A date-format title cannot be typed into directly, so set the text here."
+msgstr "カレンダーで日付を選ぶまでの間、「選択日」のタイトルに表示する文言です。日付形式のタイトルには直接入力できないので、ここで設定します。"
+
+#. translators: %d: number of remaining slots
+#: build/blocks/reservation-block/index.js:2
+#: build/blocks/reservation-block/view.js:1
+msgid "Remaining %d"
+msgstr "残り %d"
+
 #: build/blocks/reservation-block/view.js:1
 msgid "Sending..."
 msgstr "送信中..."
@@ -693,3 +719,337 @@ msgstr ""
 
 #~ msgid "We provide blocks with reservation management function."
 #~ msgstr "予約管理機能を提供するブロックです。"
+
+#: build/admin/index.js
+msgid "%d bookings"
+msgstr "%d 件の予約"
+
+#: build/admin/index.js
+msgid "Add slots for this month"
+msgstr "今月の枠を登録"
+
+#: build/admin/index.js
+msgid "Add units"
+msgstr "ユニットを追加"
+
+#: build/admin/index.js
+msgid "All"
+msgstr "すべて"
+
+#: build/admin/index.js
+msgid "All day"
+msgstr "終日"
+
+#: build/admin/index.js
+msgid "All resources"
+msgstr "すべてのリソース"
+
+#: build/admin/index.js
+msgid "Available"
+msgstr "空きあり"
+
+#: build/admin/index.js
+msgid "Booked at"
+msgstr "予約日時"
+
+#: build/admin/index.js
+msgid "Cancelled"
+msgstr "キャンセル済み"
+
+#: build/admin/index.js
+msgid "Choose a resource"
+msgstr "リソースを選ぶ"
+
+#: build/admin/index.js
+msgid "Click a day that has slots to edit the booked state and status of each time and unit."
+msgstr "枠のある日をクリックすると、時間・ユニットごとの予約済みの状態と状態を編集できます。"
+
+#: build/admin/index.js
+msgid "Closed"
+msgstr "休業"
+
+#: build/admin/index.js
+msgid "Confirmed"
+msgstr "確定"
+
+#: build/admin/index.js
+msgid "Creates slots for every unit of the resource on each open day of the selected month. Existing slots are left as they are."
+msgstr "選んだ月の営業日に、リソースのすべてのユニットの枠を作ります。すでにある枠は、そのままです。"
+
+#: build/admin/index.js
+msgid "Customer"
+msgstr "予約者"
+
+#: build/admin/index.js
+msgid "Date"
+msgstr "日付"
+
+#: build/admin/index.js
+msgid "Delete %1$d bookings? %2$d of them are still confirmed. Deleting a confirmed booking releases its slots, and the customer is not notified."
+msgstr "%1$d 件の予約を削除しますか？ そのうち %2$d 件は確定済みです。確定済みの予約を削除すると、枠は空きに戻り、予約者には通知されません。"
+
+#: build/admin/index.js
+msgid "Delete %d bookings?"
+msgstr "%d 件の予約を削除しますか？"
+
+#: build/admin/index.js
+msgid "Delete selected (%d)"
+msgstr "選択した予約を削除（%d）"
+
+#: build/admin/index.js
+msgid "Each post of this post type becomes a resource (a shop, a room, a boat, and so on) whose slots, units and bookings are managed in this menu."
+msgstr "この投稿タイプの投稿1つ1つが、リソース（店舗・部屋・船など）になります。リソースごとの枠・ユニット・予約を、このメニューで管理します。"
+
+#: build/admin/index.js
+msgid "Edit"
+msgstr "編集"
+
+#: build/admin/index.js
+msgid "Failed to save the settings."
+msgstr "設定を保存できませんでした。"
+
+#: build/admin/index.js
+msgid "Few left"
+msgstr "残りわずか"
+
+#: build/admin/index.js
+msgid "From"
+msgstr "開始日"
+
+#: build/admin/index.js
+msgid "Full"
+msgstr "満席"
+
+#: build/admin/index.js
+msgid "Guests"
+msgstr "人数"
+
+#: build/admin/index.js
+msgid "Is All Day"
+msgstr "終日"
+
+#: build/admin/index.js
+msgid "Loading..."
+msgstr "読み込み中..."
+
+#: build/admin/index.js
+msgid "Monthly reservation slots have been saved."
+msgstr "月の予約枠を保存しました。"
+
+#: build/admin/index.js
+msgid "Next month"
+msgstr "翌月"
+
+#: build/admin/index.js
+msgid "No bookings were found."
+msgstr "予約が見つかりません。"
+
+#: build/admin/index.js
+msgid "No slots"
+msgstr "枠なし"
+
+#: build/admin/index.js
+msgid "No units are registered."
+msgstr "ユニットが登録されていません。"
+
+#: build/admin/index.js
+msgid "Not selected"
+msgstr "未選択"
+
+#: build/admin/index.js
+msgid "Open Settings"
+msgstr "設定を開く"
+
+#: build/admin/index.js
+msgid "Post type used as the reservation target"
+msgstr "予約の対象にする投稿タイプ"
+
+#: build/admin/index.js
+msgid "Previous month"
+msgstr "前月"
+
+#: build/admin/index.js
+msgid "Registered units"
+msgstr "登録済みのユニット"
+
+#: build/admin/index.js
+msgid "Reservation target"
+msgstr "予約の対象"
+
+#: build/admin/index.js
+msgid "Resource"
+msgstr "リソース"
+
+#: build/admin/index.js
+msgid "Save Changes"
+msgstr "変更を保存"
+
+#: build/admin/index.js
+msgid "Select"
+msgstr "選択"
+
+#: build/admin/index.js
+msgid "Select all"
+msgstr "すべて選択"
+
+#: build/admin/index.js
+msgid "Settings saved."
+msgstr "設定を保存しました。"
+
+#: build/admin/index.js
+msgid "Status"
+msgstr "状態"
+
+#: build/admin/index.js
+msgid "Target"
+msgstr "対象"
+
+#: build/admin/index.js
+msgid "There are no resources. Choose the post type used as the reservation target on the Settings page, and create at least one post of that type."
+msgstr "リソースがありません。設定画面で予約の対象にする投稿タイプを選び、その投稿タイプの投稿を1つ以上作ってください。"
+
+#: build/admin/index.js
+msgid "Time"
+msgstr "時間"
+
+#: build/admin/index.js
+msgid "To"
+msgstr "終了日"
+
+#: build/admin/index.js
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Units"
+msgstr "ユニット"
+
+#: build/admin/index.js
+msgid "Units of the same kind are added with serial numbers (for example, Table 001, Table 002)."
+msgstr "同じ種類のユニットは、連番をつけて追加されます（例: テーブル 001、テーブル 002）。"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Booking List"
+msgstr "予約一覧"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Bookings"
+msgstr "予約一覧"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Reservation Management"
+msgstr "予約管理"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Reservation Settings"
+msgstr "予約の設定"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Settings"
+msgstr "設定"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Slot Management"
+msgstr "枠の管理"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Slots"
+msgstr "枠の管理"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "The post type does not exist."
+msgstr "その投稿タイプは存在しません。"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "Unit Management"
+msgstr "ユニット管理"
+
+#: booking-class-package/src/Admin/AdminPage.php
+msgid "You do not have permission to access this page."
+msgstr "このページにアクセスする権限がありません。"
+
+#: build/blocks/reservation-block/index.js
+msgid "Slots and bookings"
+msgstr "枠と予約"
+
+#: build/blocks/reservation-block/index.js
+msgid "Slots, units and bookings are not edited in the block editor. Manage them in the Reservation Management menu of the admin screen."
+msgstr "枠・ユニット・予約は、ブロックエディターでは編集しません。管理画面の「予約管理」メニューで操作してください。"
+
+#: build/blocks/reservation-block/index.js
+msgid "Open Reservation Management"
+msgstr "予約管理を開く"
+
+#: build/admin/index.js
+msgid "This resource has no units yet. Slots are created for each unit, so add at least one unit first."
+msgstr "このリソースには、まだユニットがありません。枠はユニットごとに作るので、先にユニットを1つ以上追加してください。"
+
+#: build/admin/index.js
+msgid "Open Units"
+msgstr "ユニットを開く"
+
+#: build/blocks/reservation-block/index.js
+msgid "Resource Title (outside the dialog)"
+msgstr "リソース名（ダイアログの外）"
+
+#: build/blocks/reservation-block/index.js
+msgid "Shows the name of the selected resource in this title, outside the reservation dialog, so that visitors can tell what they are booking."
+msgstr "選んだリソースの名前を、予約確認のダイアログの外にあるこのタイトルに表示します。何の予約か、訪問者に分かるようにするためです。"
+
+#: build/blocks/reservation-block/index.js
+msgid "Weekday and Holiday (selected date)"
+msgstr "曜日と祝日名（選んだ日）"
+
+#: build/blocks/reservation-block/index.js
+msgid "Shows the weekday of the date chosen in the calendar, followed by the holiday name if it is a holiday. Hidden until a date is chosen."
+msgstr "カレンダーで選んだ日の曜日を表示し、祝日なら祝日名を続けて表示します。日付を選ぶまでは表示されません。"
+
+#: build/admin/index.js
+msgid "Time schedule settings"
+msgstr "時間割の設定"
+
+#: build/admin/index.js
+msgid "%d dates already have slots of the other kind (all day / time-based). The new slots will be added alongside them, so those days will have both. To replace them, delete this month's slots first. Add anyway?"
+msgstr "%d 日に、種類の違う枠（終日／時間刻み）がすでにあります。新しい枠はそれらに加えて登録されるため、その日は両方の枠を持つことになります。置き換える場合は、先にこの月の枠を削除してください。それでも追加しますか？"
+
+#: build/admin/index.js
+msgid "Delete all slots of %1$s for %2$s? (%3$d days, %4$d slots) This cannot be undone."
+msgstr "%2$s の %1$s の枠をすべて削除しますか？（%3$d 日分、%4$d 枠）この操作は元に戻せません。"
+
+#: build/admin/index.js
+msgid "%d slots deleted."
+msgstr "%d 枠を削除しました。"
+
+#: build/admin/index.js
+msgid "Delete slots for this month"
+msgstr "この月の枠を削除"
+
+#: build/admin/index.js
+msgid "Removes every slot of the selected month for this resource, so you can register them again. Nothing is deleted if any slot is booked."
+msgstr "選んだ月の、このリソースの枠をすべて削除します。登録をやり直すときに使います。予約済みの枠が1つでもあるときは、何も削除しません。"
+
+#: build/admin/index.js
+msgid "Delete all slots (this month)"
+msgstr "枠をすべて削除（この月）"
+
+#: build/admin/index.js
+msgid "Dates with reserved slots:"
+msgstr "予約済みの枠がある日:"
+
+
+msgid "ITmar Booking"
+msgstr "ITmar 予約"
+
+
+msgid "Reservation calendar (time slots)"
+msgstr "予約カレンダー（時間帯あり）"
+
+
+msgid "Reservation calendar (by day)"
+msgstr "予約カレンダー（日単位）"
+
+
+msgid "A calendar, a time-slot panel, and the reservation dialogs. Choose the resource in the Reservation Block settings."
+msgstr "カレンダー、時間帯のパネル、予約のダイアログのセットです。リソースは、予約ブロックの設定で選びます。"
+
+
+msgid "A calendar that books a whole day, with the reservation dialogs. Choose the resource in the Reservation Block settings."
+msgstr "1日単位で予約するカレンダーと、予約のダイアログのセットです。リソースは、予約ブロックの設定で選びます。"
+

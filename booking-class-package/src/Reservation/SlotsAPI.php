@@ -88,6 +88,19 @@ final class SlotsAPI extends BaseReserve
             ],
         ]);
 
+        // 1か月分の枠をまとめて削除する（登録のやり直し用）
+        register_rest_route('itmar/v1', '/slots/month', [
+            [
+                'methods'  => WP_REST_Server::DELETABLE, // DELETE
+                'callback' => [__CLASS__, 'delete_month_slots'],
+                'permission_callback' => [__CLASS__, 'can_manage_slots'],
+                'args' => [
+                    'resource_id' => ['type' => 'integer', 'required' => true],
+                    'month' => ['type' => 'string', 'required' => true],
+                ],
+            ],
+        ]);
+
         register_rest_route('itmar/v1', '/resource-units', [
             'methods'             => 'POST',
             'callback'            => [__CLASS__, 'handle_save_resource_units'],
@@ -547,6 +560,94 @@ final class SlotsAPI extends BaseReserve
         return rest_ensure_response([
             'processed' => count($dates),
             'status' => 'success'
+        ]);
+    }
+
+    /**
+     * 1か月分の枠をまとめて削除する。
+     * 予約済み（is_booked）の枠がひとつでもあれば、何も消さずに断る。
+     */
+    public static function delete_month_slots(WP_REST_Request $request)
+    {
+        // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Transactional deletion uses custom inventory tables and must check current booking state.
+        global $wpdb;
+        $table_slots   = $wpdb->prefix . 'itmar_reservation_slots';
+        $table_details = $wpdb->prefix . 'itmar_slot_details';
+
+        $resource_id = (int) $request->get_param('resource_id');
+        $month       = (string) $request->get_param('month');
+
+        if ($resource_id <= 0 || !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
+            return new WP_Error('invalid_params', __('Required parameters are missing.', 'itmaroon-booking-block'), ['status' => 400]);
+        }
+
+        $from = $month . '-01';
+        $to   = gmdate('Y-m-t', strtotime($from . ' UTC'));
+
+        $slot_ids = array_values(array_filter(wp_parse_id_list($wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM %i WHERE resource_id = %d AND slot_date BETWEEN %s AND %s",
+            $table_slots,
+            $resource_id,
+            $from,
+            $to
+        )))));
+
+        if (empty($slot_ids)) {
+            return rest_ensure_response(['success' => true, 'deleted_count' => 0, 'deleted_days' => 0]);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($slot_ids), '%d'));
+
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
+        $booked_count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM %i WHERE slot_id IN ($placeholders) AND is_booked = 1",
+            array_merge([$table_details], $slot_ids)
+        ));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+        if ($booked_count > 0) {
+            // どの日が原因か分かるように、予約済みの枠がある日付を返す
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Placeholders are generated from validated integer IDs.
+            $booked_dates = $wpdb->get_col($wpdb->prepare(
+                "SELECT DISTINCT s.slot_date FROM %i d JOIN %i s ON s.id = d.slot_id
+                 WHERE d.slot_id IN ($placeholders) AND d.is_booked = 1 ORDER BY s.slot_date",
+                array_merge([$table_details, $table_slots], $slot_ids)
+            ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+            return new WP_Error(
+                'has_bookings',
+                sprintf(
+                    /* translators: %d: Number of reserved slots that prevent deletion. */
+                    __('This slot cannot be deleted because it contains %d reserved slots.', 'itmaroon-booking-block'),
+                    $booked_count
+                ),
+                ['status' => 403, 'dates' => $booked_dates]
+            );
+        }
+
+        $wpdb->query('START TRANSACTION');
+        try {
+            // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Placeholders are generated from validated integer IDs.
+            $deleted = (int) $wpdb->query($wpdb->prepare(
+                "DELETE FROM %i WHERE slot_id IN ($placeholders)",
+                array_merge([$table_details], $slot_ids)
+            ));
+            $wpdb->query($wpdb->prepare(
+                "DELETE FROM %i WHERE id IN ($placeholders)",
+                array_merge([$table_slots], $slot_ids)
+            ));
+            // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+            $wpdb->query('COMMIT');
+        } catch (\Throwable $e) {
+            $wpdb->query('ROLLBACK');
+            return new \WP_Error('db_error', __('An error occurred while deleting the slots.', 'itmaroon-booking-block'), ['status' => 500]);
+        }
+
+        // phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+        return rest_ensure_response([
+            'success'       => true,
+            'deleted_count' => $deleted,
+            'deleted_days'  => count($slot_ids),
         ]);
     }
 

@@ -9,17 +9,14 @@ import { useState } from "@wordpress/element";
 import apiFetch from "@wordpress/api-fetch";
 import type { SlotDetail } from "./types";
 
-// 2次元配列に組み替える関数
+/** 行（時間 × ユニット）を、時間の縦軸・ユニットの横軸の表にする */
 const prepareMatrix = (rows: SlotDetail[]) => {
-	// 1. ユニークな時間軸（縦軸）
-	// 開始時間でソートしつつ、表示用に終了時間も紐付けて管理できるようにします
 	const timeLabels = Array.from(
 		new Map(
 			rows.map((r) => [r.start_time, { start: r.start_time, end: r.end_time }]),
 		).values(),
 	).sort((a, b) => (a.start || "").localeCompare(b.start || ""));
 
-	// 2. ユニークなユニット軸（横軸：名前の昇順でソート）
 	const units = Array.from(
 		new Map(
 			rows.map((r) => [
@@ -27,11 +24,9 @@ const prepareMatrix = (rows: SlotDetail[]) => {
 				{ id: Number(r.unit_id), name: r.unit_name },
 			]),
 		).values(),
-	).sort((a, b) => a.name.localeCompare(b.name, "ja")); // 日本語の名前順でソート
+	).sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
-	// 3. マトリックスの生成 { [time]: { [unit_id]: SlotDetail } }
 	const matrix: { [time: string]: { [unitId: number]: SlotDetail } } = {};
-
 	timeLabels.forEach((t) => {
 		const startTime = t.start || "";
 		matrix[startTime] = {};
@@ -48,58 +43,50 @@ const prepareMatrix = (rows: SlotDetail[]) => {
 	return { timeLabels, units, matrix };
 };
 
-interface SlotEditModalProps {
+interface Props {
 	resourceId: number;
 	selDate: string;
 	rows: SlotDetail[];
-	onClose: () => void; // 引数なし、戻り値なしの関数
+	onClose: () => void;
 	onSaveSuccess: () => void;
 }
 
+interface RestError {
+	code?: string;
+	message?: string;
+}
+
+/** 1日分の枠（時間 × ユニット）の、予約済み・状態を編集する */
 export default function SlotEditModal({
 	resourceId,
 	selDate,
 	rows,
 	onClose,
 	onSaveSuccess,
-}: SlotEditModalProps) {
-	// モーダル内で編集中のデータを保持するステート
+}: Props) {
 	const [localRows, setLocalRows] = useState(rows);
 	const [isSaving, setIsSaving] = useState(false);
 
 	const { timeLabels, units, matrix } = prepareMatrix(localRows);
 
-	// セルの値を書き換えるハンドラ
 	const updateCell = (
 		detailId: number,
 		key: "is_booked" | "status",
-		value: any,
+		value: boolean | string,
 	) => {
-		setLocalRows((prev) => {
-			// 新しい配列を生成
-			return prev.map((row) => {
-				if (row.detail_id === detailId) {
-					// 一致する行を見つけたら、新しいオブジェクトとしてコピーを作成
-					// これにより、Reactが「ステートが変わった」と認識します
-					return { ...row, [key]: value };
-				}
-
-				return row;
-			});
-		});
+		setLocalRows((prev) =>
+			prev.map((row) =>
+				row.detail_id === detailId ? { ...row, [key]: value } : row,
+			),
+		);
 	};
 
-	// 変更を一括保存（簡略化のためループで処理）
+	// 変更のあった枠だけをまとめて保存する
 	const handleSave = async () => {
 		setIsSaving(true);
-
 		try {
-			// 1. オリジナルの rows と比較して、変更があったものだけを抽出
 			const diff = localRows.filter((localRow) => {
-				const original = rows.find((r) => {
-					return r.detail_id === localRow.detail_id;
-				});
-
+				const original = rows.find((r) => r.detail_id === localRow.detail_id);
 				return (
 					original &&
 					(original.is_booked !== localRow.is_booked ||
@@ -107,7 +94,6 @@ export default function SlotEditModal({
 				);
 			});
 
-			//2. まとめて送信
 			await apiFetch({
 				path: "/itmar/v1/slot-details/bulk-update",
 				method: "POST",
@@ -124,10 +110,8 @@ export default function SlotEditModal({
 				`${diff.length} ` +
 					__("items saved successfully.", "itmaroon-booking-block"),
 			);
-			// 【重要】親に通知
-			if (onSaveSuccess) onSaveSuccess();
-
-			onClose(); // 成功したら閉じる
+			onSaveSuccess();
+			onClose();
 		} catch (e) {
 			alert(__("Save failed.", "itmaroon-booking-block"));
 		} finally {
@@ -135,21 +119,8 @@ export default function SlotEditModal({
 		}
 	};
 
-	// slot_detail丸ごと削除
-	interface BulkDeleteResponse {
-		success: boolean;
-		deleted_count: number;
-	}
-
-	interface WordPressRestError {
-		code: string; // PHP側の WP_Error の第一引数 ('has_bookings' など)
-		message: string; // ユーザーに表示するエラー文
-		data: {
-			status: number; // HTTPステータスコード (403 など)
-		};
-	}
+	// その日の枠をすべて削除する（休業日にする）。予約が入っている枠があれば、サーバーが断る
 	const handleDeleteDay = async () => {
-		// ユーザーに確認を求める（誤操作防止）
 		if (
 			!window.confirm(
 				__(
@@ -163,37 +134,30 @@ export default function SlotEditModal({
 
 		setIsSaving(true);
 		try {
-			// 全ての detail_id を抽出して削除リクエストを送る
-			const detailIds = rows.map((r) => r.detail_id);
-			console.log(rows);
-			const result = await apiFetch<BulkDeleteResponse>({
-				path: "/itmar/v1/slot-details/bulk-delete", // 削除専用のエンドポイント
+			const result = await apiFetch<{ success: boolean; deleted_count: number }>({
+				path: "/itmar/v1/slot-details/bulk-delete",
 				method: "DELETE",
 				data: {
 					resource_id: resourceId,
 					sel_date: selDate,
-					detail_ids: detailIds,
+					detail_ids: rows.map((r) => r.detail_id),
 				},
 			});
-
-			// 親コンポーネント（Edit.tsx）に通知してデータを再取得させる
-			if (onSaveSuccess) onSaveSuccess();
-
+			onSaveSuccess();
 			alert(
 				`${result.deleted_count} ` +
 					__("items deleted successfully.", "itmaroon-booking-block"),
 			);
 		} catch (err) {
-			const error = err as WordPressRestError;
-			if (error.code === "has_bookings") {
-				// 予約がある場合の固有の処理
+			const error = err as RestError;
+			if (error.code === "has_bookings" && error.message) {
 				alert(error.message);
 			} else {
 				alert(__("An unexpected error occurred.", "itmaroon-booking-block"));
 			}
 		} finally {
 			setIsSaving(false);
-			onClose(); // モーダルを閉じる
+			onClose();
 		}
 	};
 
@@ -201,10 +165,10 @@ export default function SlotEditModal({
 		<Modal
 			title={`${__("Detailed Edit", "itmaroon-booking-block")} : ${selDate}`}
 			onRequestClose={onClose}
-			className="slot-matrix-modal"
+			className="itmar-booking-slot-modal"
 		>
-			<div className="matrix-wrapper">
-				<table className="slot-matrix-table">
+			<div className="itmar-booking-matrix-wrapper">
+				<table className="itmar-booking-matrix">
 					<thead>
 						<tr>
 							{timeLabels.length > 1 && (
@@ -218,11 +182,11 @@ export default function SlotEditModal({
 					<tbody>
 						{timeLabels.map((t) => (
 							<tr key={t.start}>
-								{/* 時間の見出しを「開始 - 終了」にする */}
 								{timeLabels.length > 1 && (
 									<td className="time-label">
-										{t.start} <br />
-										<small style={{ opacity: 0.6 }}>〜 {t.end}</small>
+										{t.start}
+										<br />
+										<small>〜 {t.end}</small>
 									</td>
 								)}
 								{units.map((unit) => {
@@ -236,6 +200,7 @@ export default function SlotEditModal({
 												onChange={(val) =>
 													updateCell(cell.detail_id, "is_booked", val)
 												}
+												__nextHasNoMarginBottom
 											/>
 											<SelectControl
 												value={cell.status}
@@ -245,8 +210,9 @@ export default function SlotEditModal({
 													{ label: "Maintenance", value: "maintenance" },
 												]}
 												onChange={(val) =>
-													updateCell(cell.detail_id, "status", val as any)
+													updateCell(cell.detail_id, "status", val)
 												}
+												__nextHasNoMarginBottom
 											/>
 										</td>
 									);
@@ -256,23 +222,14 @@ export default function SlotEditModal({
 					</tbody>
 				</table>
 			</div>
-			<div
-				className="modal-footer"
-				style={{
-					display: "flex",
-					justifyContent: "space-between",
-					marginTop: "20px",
-				}}
-			>
+			<div className="itmar-booking-modal-footer">
 				<Button variant="primary" onClick={handleSave} disabled={isSaving}>
 					{isSaving
 						? __("Saving...", "itmaroon-booking-block")
 						: __("Save All Changes", "itmaroon-booking-block")}
 				</Button>
 				<Button isDestructive onClick={handleDeleteDay} disabled={isSaving}>
-					{isSaving
-						? __("Saving...", "itmaroon-booking-block")
-						: __("Delete All Slots (Set as Closed)", "itmaroon-booking-block")}
+					{__("Delete All Slots (Set as Closed)", "itmaroon-booking-block")}
 				</Button>
 				<Button variant="tertiary" onClick={onClose}>
 					{__("Cancel", "itmaroon-booking-block")}

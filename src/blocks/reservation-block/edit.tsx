@@ -7,19 +7,15 @@ import type {
 	DayObject,
 	TableRow,
 	TableSource,
-	BulkResult,
 	userBooking,
-	SlotDetail,
 	SlotUsing,
 } from "./types";
 import {
 	PanelBody,
-	PanelRow,
 	Notice,
 	TextControl,
 	ToggleControl,
 	Button,
-	BaseControl,
 	SelectControl,
 	RangeControl,
 	RadioControl,
@@ -39,10 +35,9 @@ import {
 	ArchiveSelectControl,
 	PostSelectControl,
 	getMonthRangeYmd,
-	generateMonthCalendar,
-	normalizeDateYYYYMMDD,
 	toYmdFromMonthAndDay,
 	flattenBlocks,
+	displayFormated,
 } from "itmar-block-packages";
 
 import {
@@ -54,31 +49,21 @@ import {
 	slotInfoCalendar,
 } from "./createTableSource";
 
-import SlotEditModal from "./SlotEditModal";
+import { buildDateNote } from "./dateNote";
 
 import "./editor.scss";
-
-const WEEKDAYS = [
-	{ key: 0, label: __("Sun", "itmaroon-booking-block") },
-	{ key: 1, label: __("Mon", "itmaroon-booking-block") },
-	{ key: 2, label: __("Tue", "itmaroon-booking-block") },
-	{ key: 3, label: __("Wed", "itmaroon-booking-block") },
-	{ key: 4, label: __("Thu", "itmaroon-booking-block") },
-	{ key: 5, label: __("Fri", "itmaroon-booking-block") },
-	{ key: 6, label: __("Sat", "itmaroon-booking-block") },
-];
 
 export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	const { attributes, setAttributes, clientId, isSelected } = props;
 	const {
 		resourceId,
 		resourceSlug,
+		resourceRest,
 		selectedSlug,
 		selectedRest,
 		calendarTableId,
 		bookingTableId,
 		timeTableId,
-		closedWeekdays,
 		infoMessages,
 		dispUniqueIds,
 		confirmModal,
@@ -97,6 +82,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		closeGradient,
 		remainDisp,
 		restDisp,
+		selectedDatePlaceholder,
 	} = attributes;
 
 	// dispatch関数を取得
@@ -208,109 +194,8 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		calendarFromInner?.attributes?.selectedValue,
 	]);
 
-	//枠を作る日付を生成
-	const pad2 = (n: number) => String(n).padStart(2, "0");
-
-	//iframeの取得のための参照
-	const containerRef = useRef<HTMLDivElement>(null);
-
-	// 週休日のセット
-	const closedSet = useMemo<Set<number>>(
-		() => new Set<number>(closedWeekdays ?? []),
-		[closedWeekdays],
-	);
-
-	const datesToCreate = useMemo<string[]>(() => {
-		const selectedMonth = calendarFromInner?.attributes?.selectedMonth; // "YYYY/MM"
-		if (!selectedMonth) return [];
-
-		const [yStr, mStr] = String(selectedMonth).split("/");
-		const year = Number(yStr);
-		const month = Number(mStr);
-		if (!year || !month) return [];
-
-		return generateMonthCalendar(selectedMonth)
-			.filter((d) => !closedSet.has(Number(d.weekday)))
-			.map((d) => `${year}-${pad2(month)}-${pad2(Number(d.date))}`); // "YYYY-MM-DD"
-	}, [calendarFromInner?.attributes?.selectedMonth, closedSet]);
-
-	// 予約レコード削除のチェックボックスがクリックされた時に呼ぶ関数
-	const onTableClick = (e: React.MouseEvent) => {
-		const target = e.target as HTMLInputElement;
-
-		// クリックされたのがチェックボックスだったら
-		if (target.classList.contains("itmar-delete-checkbox")) {
-			// 1. 現在のチェック状態を一時的に保持
-			const isChecked = target.checked;
-			const targetValue = target.value;
-
-			// 2.ブロックを選択状態にする
-			selectBlock(reservatedInner?.clientId);
-			// 3. 次のレンダリングサイクルでチェックを強制的に戻す
-			setTimeout(() => {
-				if (containerRef.current) {
-					const blockDocument = containerRef.current.ownerDocument;
-					// Valueなどをキーに、再描画された後の新しいDOM要素を探す
-					const checkbox = blockDocument.querySelector(
-						`.itmar-delete-checkbox[value="${targetValue}"]`,
-					) as HTMLInputElement;
-
-					if (checkbox) {
-						checkbox.checked = isChecked;
-						// 必要に応じて change イベントを発火させておく
-						checkbox.dispatchEvent(new Event("change", { bubbles: true }));
-					}
-				}
-			}, 0);
-		}
-	};
-
 	// =====状態変数 =====
 	const [isInitialized, setIsInitialized] = useState(false); // 初期化完了フラグ
-
-	const [lastUpdated, setLastUpdated] = useState(Date.now()); // 保存が成功するたびに更新するカウンター
-	const [dayLoading, setDayLoading] = useState<boolean>(false);
-
-	const [slotRows, setSlotRows] = useState<SlotDetail[]>([]);
-
-	const [monthSaving, setMonthSaving] = useState<boolean>(false);
-	const [monthNotice, setMonthNotice] = useState<{
-		status: "error" | "success" | "warning" | "info" | undefined;
-		message: string;
-	}>({ status: undefined, message: "" });
-	const [unitSaving, setUnitSaving] = useState<boolean>(false);
-	const [addNum, setAddnum] = useState<number>(1);
-
-	//unitの管理ステート
-	interface ResourceUnit {
-		id?: number;
-		name: string;
-		min: number;
-		max: number;
-	}
-	const [currentUnit, setCurrentUnit] = useState<ResourceUnit>({
-		name: "",
-		min: 1,
-		max: 2,
-	});
-	const [unitList, setUnitList] = useState<ResourceUnit[]>([]); // 保存済みユニットのリスト
-	const [selectedUnitId, setSelectedUnitId] = useState<string>("");
-	//Spanの管理ステート
-	interface TypeSpan {
-		id?: number;
-		startTime: string;
-		endTime: string;
-	}
-	const [isAllday, setIsAllday] = useState<boolean>(false);
-	const [currentSpan, setTimeSpan] = useState<TypeSpan>({
-		startTime: "00:00",
-		endTime: "00:00",
-	});
-
-	const [travel, setTravel] = useState<number>(60);
-
-	//スロット編集Modal表示フラグ
-	const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
 	// 日付ごとの詳細データを保持するステート
 	const [dailyStatsMap, setDailyStatsMap] = useState<Record<number, SlotUsing>>(
@@ -356,52 +241,123 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		setIsInitialized(false);
 	}, [calendarFromInner?.attributes?.selectedMonth]);
 
-	// 選択日 or resourceId が変わったら、その日の slot を DB から取得
+	//選んだ日の曜日と祝日名（祝日でなければ曜日だけ）を、「Weekday and Holiday」に設定されたタイトルへ映す。
+	//日付が選ばれていない間は空にする。祝日名は、カレンダーブロックの日付データ（dateValues）から取る。
 	useEffect(() => {
-		const fetchDaySlot = async (): Promise<void> => {
-			// 条件が揃わないなら終了
-			if (!resourceId || !selectedDateYmd) {
-				return;
-			}
+		if (!dispUniqueIds?.selectedDateNote) return;
+		let targetId = "";
+		try {
+			targetId = JSON.parse(dispUniqueIds.selectedDateNote).id;
+		} catch {
+			return;
+		}
+		const titleBlock = (targetTitleBlock ?? []).find(
+			(b: any) => b.attributes?.uniqueID === targetId,
+		);
+		if (!titleBlock) return;
 
-			setDayLoading(true);
-			try {
-				const path = `/itmar/v1/slots?resource_id=${encodeURIComponent(
-					resourceId,
-				)}&from=${encodeURIComponent(selectedDateYmd)}&to=${encodeURIComponent(
-					selectedDateYmd,
-				)}`;
+		const day = Number(calendarFromInner?.attributes?.selectedValue);
+		const holiday = (
+			(calendarFromInner?.attributes?.dateValues ?? []) as {
+				date: number;
+				holiday?: string;
+			}[]
+		).find((item) => Number(item.date) === day)?.holiday;
+		const content =
+			day > 0 && selectedDateYmd ? buildDateNote(selectedDateYmd, holiday) : "";
 
-				const rows = await apiFetch({ path });
+		if ((titleBlock.attributes.headingContent ?? "") !== content) {
+			updateBlockAttributes(titleBlock.clientId, { headingContent: content });
+		}
+	}, [
+		selectedDateYmd,
+		calendarFromInner?.attributes?.selectedValue,
+		calendarFromInner?.attributes?.dateValues,
+		dispUniqueIds?.selectedDateNote,
+		targetTitleBlock,
+	]);
 
-				//データベースから取ってきたデータをステータスにセット
-				setSlotRows(rows as SlotDetail[]);
-			} catch (e) {
-				const error = e as { message?: string };
-				console.error(
-					error?.message ??
-						__("Failed to load selected day slot.", "itmaroon-booking-block"),
-				);
-			} finally {
-				setDayLoading(false);
-			}
+	//リソース名（投稿のタイトル）を取得する。エディターのプレビューで、タイトルへ映すために使う。
+	const [resourceName, setResourceName] = useState<string>("");
+	useEffect(() => {
+		const restBase = resourceRest || selectedRest;
+		if (!resourceId || !restBase) {
+			setResourceName("");
+			return;
+		}
+		let alive = true;
+		apiFetch<{ title?: { rendered?: string } }>({
+			path: `/wp/v2/${restBase}/${resourceId}`,
+		})
+			.then((post) => {
+				if (!alive) return;
+				//タイトルの HTML エンティティ（&amp; など）を文字に戻す
+				const box = document.createElement("textarea");
+				box.innerHTML = post?.title?.rendered ?? "";
+				setResourceName(box.value);
+			})
+			.catch(() => {
+				if (alive) setResourceName("");
+			});
+		return () => {
+			alive = false;
 		};
+	}, [resourceId, resourceRest, selectedRest]);
 
-		fetchDaySlot();
-	}, [resourceId, selectedDateYmd, monthNotice]);
-
-	//slotRows(選択された日付に対応するスロット)が変化したとき
+	//リソース名を、「Resource Title」に設定されたタイトルへ映す（フロントと同じ動きをエディターでも確認できる）
 	useEffect(() => {
-		// 【重要】初期化が終わっていなければ、ここで即座に引き返す（早期リターン）
-		if (!isInitialized) return;
+		if (!dispUniqueIds?.resourceTitle) return;
+		let targetId = "";
+		try {
+			targetId = JSON.parse(dispUniqueIds.resourceTitle).id;
+		} catch {
+			return;
+		}
+		const titleBlock = (targetTitleBlock ?? []).find(
+			(b: any) => b.attributes?.uniqueID === targetId,
+		);
+		if (!titleBlock) return;
+		if ((titleBlock.attributes.headingContent ?? "") !== resourceName) {
+			updateBlockAttributes(titleBlock.clientId, { headingContent: resourceName });
+		}
+	}, [dispUniqueIds?.resourceTitle, resourceName, targetTitleBlock]);
 
-		const selDay = calendarFromInner?.attributes?.selectedValue;
+	//選択した日付を、「Selected Date」に設定されたタイトルへ映す（フロントと同じ動きをエディターでも確認できる）。
+	//日付が選ばれていない間（読み込み直後や月の切り替え後）は中身を空にする。
+	useEffect(() => {
+		if (!dispUniqueIds?.selectedDate) return;
+		let targetId = "";
+		try {
+			targetId = JSON.parse(dispUniqueIds.selectedDate).id;
+		} catch {
+			return;
+		}
+		const titleBlock = (targetTitleBlock ?? []).find(
+			(b: any) => b.attributes?.uniqueID === targetId,
+		);
+		if (!titleBlock) return;
 
-		//その日のスロットデータなければ終了
-		if (!dailyStatsMap[selDay]) return;
-		//スロット編集用モーダルの表示
-		setIsModalOpen(true);
-	}, [slotRows]);
+		const hasDay = Number(calendarFromInner?.attributes?.selectedValue) > 0;
+		const ymd = hasDay && selectedDateYmd ? selectedDateYmd : "";
+		//日付が選ばれていない間は、設定された文言（なければ空）を出す
+		const { titleType, userFormat, freeStrFormat, decimal } =
+			titleBlock.attributes;
+		const content = !ymd
+			? selectedDatePlaceholder ?? ""
+			: titleType === "date"
+			? `${ymd}T00:00:00`
+			: String(displayFormated(ymd, userFormat, freeStrFormat, decimal));
+
+		if ((titleBlock.attributes.headingContent ?? "") !== content) {
+			updateBlockAttributes(titleBlock.clientId, { headingContent: content });
+		}
+	}, [
+		selectedDateYmd,
+		calendarFromInner?.attributes?.selectedValue,
+		dispUniqueIds?.selectedDate,
+		selectedDatePlaceholder,
+		targetTitleBlock,
+	]);
 
 	//カレンダーテーブルのレンダリング
 	useEffect(() => {
@@ -489,7 +445,6 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		calendarFromInner?.attributes,
 		resourceId,
 		tableFromInner?.clientId,
-		lastUpdated,
 		isHoliday,
 		enoughBorder,
 		enoughBgColor,
@@ -592,144 +547,72 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		timeFromInner?.clientId,
 	]);
 
-	//予約済みデータの表示
+	//予約済みテーブルのデザイン用に、サンプルの3行を入れる。データベースは読まない。
+	//実際の予約は、管理画面「予約管理」の予約一覧で確認・削除する。
 	useEffect(() => {
-		//予約済みデータの取得
-		const runReservationDataGet = async (): Promise<void> => {
-			if (!reservatedInner) return;
-			if (!resourceId) return;
+		if (!reservatedInner) return;
 
-			const path = `/itmar/v1/get_user_bookings?resource_id=${resourceId}`;
-			const bookings = await apiFetch<userBooking[]>({ path });
+		//サンプルの日付は、カレンダーで選んでいる月に合わせる
+		const selectedMonth = calendarFromInner?.attributes?.selectedMonth as
+			| string
+			| undefined;
+		const now = new Date();
+		const month = selectedMonth
+			? selectedMonth.replace("/", "-")
+			: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-			// 予約一覧用の Source を作成
-			const reservation_data = buildBookingListTableSource(
-				bookings,
-				{
-					renderActions: renderCancelButtonHtml,
-				},
-				true,
-			);
+		//時間テーブルを使うときは時間つき、使わないとき（終日予約）は時間なしにする
+		const spanOf = (start: string, end: string) =>
+			timeFromInner
+				? { reserve_time: start, end_time: end }
+				: { reserve_time: "00:00:00", end_time: "23:59:59" };
 
-			// ★ 変化があるときだけ tableSource 更新（無限更新防止）
-			const prev = (reservatedInner.attributes?.tableSource ??
-				[]) as TableSource;
-			if (tableSig(prev) !== tableSig(reservation_data)) {
-				updateBlockAttributes(reservatedInner.clientId, {
-					tableLayout: "fixed",
-					tableSource: reservation_data,
-				});
-			}
-		};
+		const sampleBookings: userBooking[] = [
+			{
+				booking_id: 1,
+				guest_count: 2,
+				slot_ids: "1",
+				booking_status: "confirmed",
+				reserve_date: `${month}-10`,
+				...spanOf("18:00:00", "19:00:00"),
+			},
+			{
+				booking_id: 2,
+				guest_count: 4,
+				slot_ids: "2",
+				booking_status: "confirmed",
+				reserve_date: `${month}-17`,
+				...spanOf("19:00:00", "20:00:00"),
+			},
+			{
+				booking_id: 3,
+				guest_count: 3,
+				slot_ids: "3",
+				booking_status: "cancelled",
+				reserve_date: `${month}-24`,
+				...spanOf("20:00:00", "21:00:00"),
+			},
+		];
 
-		// containerRef.current が属している document (iframe内) を取得
-		const blockDocument = containerRef.current?.ownerDocument;
-		const blockWrapper = blockDocument?.getElementById(
-			`block-${reservatedInner?.clientId}`,
+		const reservation_data = buildBookingListTableSource(
+			sampleBookings,
+			{ renderActions: renderCancelButtonHtml },
+			false,
 		);
-		//削除実行ボタンを配置
-		if (blockWrapper) {
-			// そのブロック内にあるテーブルの、最後のthを特定
-			const lastTh = blockWrapper.querySelector("thead th:last-child");
 
-			// 二重追加防止：既にボタンがないか確認
-			if (lastTh && !lastTh.querySelector("#itmar-bulk-delete-button")) {
-				const btn = document.createElement("button");
-				btn.id = "itmar-bulk-delete-button";
-				btn.type = "button";
-				btn.innerText = "削除実行";
-
-				// デザイン調整（インラインでスッキリ配置）
-				Object.assign(btn.style, {
-					background: "#db4949",
-					color: "#fff",
-					border: "none",
-					padding: "2px 8px",
-					borderRadius: "3px",
-					cursor: "pointer",
-					fontSize: "11px",
-					marginLeft: "8px",
-					verticalAlign: "middle",
-				});
-
-				// 削除実行ボタンのクリックイベント
-				btn.addEventListener("click", async (e) => {
-					// クリックイベントが親要素（詳細表示など）に伝播しないようにガード
-					e.preventDefault();
-					e.stopPropagation();
-					e.stopImmediatePropagation();
-
-					// チェックされているIDを収集
-					const checkedInputs = blockWrapper.querySelectorAll(
-						".itmar-delete-checkbox:checked",
-					);
-
-					const bookingIds = Array.from(checkedInputs).map(
-						(input) => (input as HTMLInputElement).value,
-					);
-
-					if (bookingIds.length === 0) {
-						alert(
-							__(
-								"Please check the data you want to delete.",
-								"itmaroon-booking-block",
-							),
-						);
-						return;
-					}
-
-					const confirmMessage = sprintf(
-						/* translators: %d: 削除する件数 */
-						__(
-							"Do you want to completely delete %d data items? \nThis operation cannot be undone.",
-							"itmaroon-booking-block",
-						),
-						bookingIds.length,
-					);
-
-					if (!confirm(confirmMessage)) {
-						return;
-					}
-
-					// 戻り値の型定義
-					interface DeleteBookingsResponse {
-						success: boolean;
-						deleted_count: number;
-						message: string;
-					}
-
-					try {
-						const result = await apiFetch<DeleteBookingsResponse>({
-							path: "/itmar/v1/bookings",
-							method: "DELETE",
-							data: { ids: bookingIds },
-						});
-
-						if (result.success) {
-							alert(result.message);
-							// bookingsデータを再取得して画面を更新
-							setIsInitialized(false);
-						}
-					} catch (error: any) {
-						// apiFetchはHTTPエラー時に例外を投げるため、ここでキャッチ
-						console.error("Delete failed:", error.message);
-						alert(__("Deletion failed.", "itmaroon-booking-block"));
-					}
-				});
-
-				lastTh.appendChild(btn);
-			}
+		// ★ 変化があるときだけ tableSource 更新（無限更新防止）
+		const prev = (reservatedInner.attributes?.tableSource ?? []) as TableSource;
+		if (tableSig(prev) !== tableSig(reservation_data)) {
+			updateBlockAttributes(reservatedInner.clientId, {
+				tableLayout: "fixed",
+				tableSource: reservation_data,
+			});
 		}
-
-		// エラーは握りつぶさずログ（必要なら Notice 表示に変更）
-		runReservationDataGet().catch((e: unknown) =>
-			console.error("get reservation -> get reservation data failed:", e),
-		);
 	}, [
-		isInitialized,
-		resourceId,
 		reservatedInner?.clientId,
 		reservatedInner?.attributes?.tableHeading,
+		calendarFromInner?.attributes?.selectedMonth,
+		timeFromInner?.clientId,
 	]);
 
 	//予定表上のテーブルをクリックしたときの処理
@@ -776,214 +659,6 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		tableFromInner?.attributes?.clickCellPos,
 	]);
 
-	//一月分の枠を一括で登録
-	const addMonthSlots = async () => {
-		setMonthNotice({ status: undefined, message: "" });
-
-		if (!resourceId) {
-			setMonthNotice({
-				status: "error",
-				message: __("Resource is not selected.", "itmaroon-booking-block"),
-			});
-			return;
-		}
-		if (!calendarFromInner?.attributes?.selectedMonth) {
-			setMonthNotice({
-				status: "error",
-				message: __(
-					"Month is not selected in calendar block.",
-					"itmaroon-booking-block",
-				),
-			});
-			return;
-		}
-		if (datesToCreate.length === 0) {
-			setMonthNotice({
-				status: "warning",
-				message: __(
-					"No dates to create (maybe all weekdays are closed).",
-					"itmaroon-booking-block",
-				),
-			});
-			return;
-		}
-
-		setMonthSaving(true);
-		try {
-			const payload = {
-				resource_id: Number(resourceId),
-				dates: datesToCreate, // ["YYYY-MM-DD", ...] （定休日除外後）
-				isAllday: isAllday,
-				startTime: currentSpan.startTime,
-				endTime: currentSpan.endTime,
-				timeTravel: travel,
-			};
-
-			await apiFetch<BulkResult>({
-				path: "/itmar/v1/slots/bulk",
-				method: "POST",
-				data: payload,
-			});
-
-			setMonthNotice({
-				status: "success",
-				message: __(
-					"Monthly reservation slots have been saved. Please reselect the resource, then reload the editor to display the latest data.",
-					"itmaroon-booking-block",
-				),
-			});
-		} catch (e: any) {
-			const errorMessage =
-				e?.message || __("Bulk create failed.", "itmaroon-booking-block");
-			setMonthNotice({
-				status: "error",
-				message: errorMessage,
-			});
-		} finally {
-			setMonthSaving(false);
-		}
-	};
-
-	// --- ユニットの読み込み処理 ---
-	useEffect(() => {
-		if (resourceId) {
-			apiFetch<ResourceUnit[]>({
-				path: `/itmar/v1/resource-units/${resourceId}`,
-			}).then((data) => {
-				setUnitList(data);
-			});
-		}
-	}, [resourceId, unitSaving]);
-
-	// --- ユニットの追加（保存） ---
-	const addUnitInfo = async () => {
-		if (!currentUnit.name) {
-			alert(__("Please enter a unit name.", "itmaroon-booking-block"));
-			return;
-		}
-
-		setUnitSaving(true); //保存処理の開始フラグ
-		try {
-			// 現在のリストに新しい設定を追加した配列を作成
-			const newUnits: ResourceUnit[] = [];
-			//同じ種類の席数を一括で入力
-			for (let i = 0; i < addNum; i++) {
-				// 3桁で0埋めする（例: 1 -> 001, 12 -> 012）
-				const unitNumber = (newUnits.length + 1).toString().padStart(3, "0");
-
-				newUnits.push({
-					name: `${currentUnit.name} ${unitNumber}`,
-					min: currentUnit.min,
-					max: currentUnit.max,
-					// quantity は持たせず、1レコード 1ユニットとして扱う
-				});
-			}
-			//格納処理
-			await apiFetch({
-				path: "/itmar/v1/resource-units",
-				method: "POST",
-				data: {
-					resource_id: attributes.resourceId,
-					units: newUnits,
-				},
-			});
-
-			alert(__("Unit saved successfully.", "itmaroon-booking-block"));
-		} catch (error) {
-			console.error(error);
-			alert(__("Failed to save unit.", "itmaroon-booking-block"));
-		} finally {
-			setUnitSaving(false); //保存処理の開始フラグを解除
-		}
-	};
-
-	// --- ユニットの更新（保存） ---
-	const handleUpdateUnit = async () => {
-		if (!selectedUnitId) return;
-
-		setUnitSaving(true);
-
-		try {
-			await apiFetch({
-				path: `/itmar/v1/resource-units/${selectedUnitId}`,
-				method: "PUT",
-				data: {
-					name: currentUnit.name,
-					min: currentUnit.min,
-					max: currentUnit.max,
-				},
-			});
-
-			// ローカルの unitList も更新して、画面表示を最新にする
-			setUnitList((prev) =>
-				prev.map((u) =>
-					u.id === currentUnit.id ? { ...u, ...currentUnit } : u,
-				),
-			);
-
-			alert(__("Unit updated successfully.", "itmaroon-booking-block"));
-		} catch (error) {
-			console.error(error);
-			alert(__("Failed to update unit.", "itmaroon-booking-block"));
-		} finally {
-			setUnitSaving(false);
-		}
-	};
-
-	// --- ユニットの削除 ---
-	const delUnitInfo = async () => {
-		if (!selectedUnitId) {
-			alert(
-				__("Please select a saved unit to delete.", "itmaroon-booking-block"),
-			);
-			return;
-		}
-
-		if (
-			!confirm(
-				__(
-					"Are you sure you want to delete this unit? This may affect existing slots.",
-					"itmaroon-booking-block",
-				),
-			)
-		) {
-			return;
-		}
-
-		try {
-			setUnitSaving(true); //削除処理の開始フラグ
-			await apiFetch({
-				path: `/itmar/v1/resource-units/${selectedUnitId}`,
-				method: "DELETE",
-			});
-			setCurrentUnit({
-				name: "",
-				min: 1,
-				max: 2,
-			});
-			alert(__("Unit Delete successfully.", "itmaroon-booking-block"));
-		} catch (error: any) {
-			const message =
-				error.message ||
-				__("An unknown error occurred.", "itmaroon-booking-block");
-
-			alert(message);
-			console.error(error);
-		} finally {
-			setUnitSaving(false); //削除処理の開始フラグを解除
-		}
-	};
-
-	//トグルボタンのイベントドリブン
-	const onToggleClosed = (dow: number): void => {
-		const cur: number[] = Array.isArray(closedWeekdays) ? closedWeekdays : [];
-		if (cur.includes(dow)) {
-			setAttributes({ closedWeekdays: cur.filter((x) => x !== dow) });
-		} else {
-			setAttributes({ closedWeekdays: [...cur, dow].sort((a, b) => a - b) });
-		}
-	};
-
 	// tableSourceの変化検知（必要ならもっと軽くしてOK）
 	const tableSig = (arr: TableRow[] | undefined): string =>
 		JSON.stringify(arr || []);
@@ -1009,21 +684,6 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 	);
 	const selectedTableId = (value: string): string =>
 		availableTableIds.has(value) ? value : "";
-
-	// unitList から SelectControl 用の options を作成
-	const unitOptions = [
-		{
-			value: "",
-			label: __("Select a unit to delete or edit", "itmaroon-booking-block"),
-		},
-		// unitListをコピーしてソートしてからmapに繋げます
-		...[...unitList]
-			.sort((a, b) => a.name.localeCompare(b.name, "ja")) // 日本語の昇順（あいうえお順）
-			.map((unit) => ({
-				value: unit.id?.toString() || "",
-				label: `${unit.name} (${unit.min}-${unit.max}名)`,
-			})),
-	];
 
 	// 予約情報表示のブロックを選択するためのオプション
 	interface SelectOption {
@@ -1150,6 +810,24 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 		<>
 			<InspectorControls>
 				<PanelBody
+					title={__("Slots and bookings", "itmaroon-booking-block")}
+					initialOpen={true}
+				>
+					<p>
+						{__(
+							"Slots, units and bookings are not edited in the block editor. Manage them in the Reservation Management menu of the admin screen.",
+							"itmaroon-booking-block",
+						)}
+					</p>
+					<Button
+						variant="secondary"
+						href="admin.php?page=itmar-booking"
+						target="_blank"
+					>
+						{__("Open Reservation Management", "itmaroon-booking-block")}
+					</Button>
+				</PanelBody>
+				<PanelBody
 					title={__("Setting Display Table", "itmaroon-booking-block")}
 					initialOpen={true}
 				>
@@ -1210,238 +888,8 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 							});
 						}}
 					/>
-					<PanelBody
-						title={__("Unit Setting", "itmaroon-booking-block")}
-						initialOpen={true}
-					>
-						<SelectControl
-							label={__("Resource Units", "itmaroon-booking-block")}
-							value={selectedUnitId}
-							options={unitOptions}
-							onChange={(value) => {
-								// 1. 選択されたIDをステートに保存
-								setSelectedUnitId(value);
-
-								// 2. unitList から一致するオブジェクトを検索
-								const unitId = Number(value);
-								const selectedUnit = unitList.find(
-									(u) => Number(u.id) === unitId,
-								);
-								if (selectedUnit) {
-									// 3. 見つかったオブジェクトを currentUnit にセット
-									// これで下の TextControl 類に現在の値が自動で入ります
-									setCurrentUnit({
-										name: selectedUnit.name,
-										min: selectedUnit.min,
-										max: selectedUnit.max,
-									});
-								} else {
-									// 未選択（空）が選ばれた場合はリセット
-									setCurrentUnit({ name: "", min: 1, max: 2 });
-								}
-							}}
-							help={__(
-								"Select a unit to remove or modify from the master list.If not selected, it will be added.",
-								"itmaroon-booking-block",
-							)}
-						/>
-						<TextControl
-							label={__("Unit Name", "itmaroon-booking-block")}
-							value={currentUnit.name}
-							onChange={(val) => {
-								setCurrentUnit({ ...currentUnit, name: val });
-							}}
-						/>
-
-						<PanelRow className="distance_row">
-							<TextControl
-								label={__("Capacity (min)", "itmaroon-booking-block")}
-								type="number"
-								min={0}
-								value={currentUnit.min.toString()}
-								onChange={(v) =>
-									setCurrentUnit({ ...currentUnit, min: Number(v) || 0 })
-								}
-							/>
-							<TextControl
-								label={__("Capacity (max)", "itmaroon-booking-block")}
-								type="number"
-								min={0}
-								value={currentUnit.max.toString()}
-								onChange={(v) =>
-									setCurrentUnit({ ...currentUnit, max: Number(v) || 0 })
-								}
-							/>
-						</PanelRow>
-						{!selectedUnitId && (
-							<PanelRow className="addNum_row">
-								<Button
-									variant="primary"
-									onClick={addUnitInfo}
-									disabled={unitSaving}
-								>
-									{unitSaving
-										? __("Creating...", "itmaroon-booking-block")
-										: __("Add Unit", "itmaroon-booking-block")}
-								</Button>
-
-								<TextControl
-									label={__("Add Num", "itmaroon-booking-block")}
-									type="number"
-									value={addNum.toString()}
-									onChange={(v) => setAddnum(Number(v) || 0)}
-								/>
-							</PanelRow>
-						)}
-						{selectedUnitId && (
-							<PanelRow className="distance_row">
-								<Button
-									variant="secondary"
-									onClick={handleUpdateUnit}
-									disabled={unitSaving}
-								>
-									{unitSaving
-										? __("Creating...", "itmaroon-booking-block")
-										: __("Modify Unit", "itmaroon-booking-block")}
-								</Button>
-								<Button
-									variant="secondary"
-									onClick={delUnitInfo}
-									disabled={unitSaving}
-								>
-									{unitSaving
-										? __("Creating...", "itmaroon-booking-block")
-										: __("Delete Unit", "itmaroon-booking-block")}
-								</Button>
-							</PanelRow>
-						)}
-					</PanelBody>
 				</PanelBody>
 
-				{/* 月設定 */}
-				<PanelBody
-					title={__("Monthly slots", "itmaroon-booking-block")}
-					initialOpen={true}
-				>
-					<BaseControl
-						label={__(
-							"Selected month (from calendar)",
-							"itmaroon-booking-block",
-						)}
-						help={__(
-							"This value is synced from the inner calendar block (YYYY/MM).",
-							"itmaroon-booking-block",
-						)}
-					>
-						<div
-							style={{
-								padding: "8px 10px",
-								border: "1px solid #ddd",
-								borderRadius: "6px",
-								background: "#f7f7f7",
-								fontFamily: "monospace",
-							}}
-						>
-							{calendarFromInner?.attributes?.selectedMonth || "-"}
-						</div>
-					</BaseControl>
-
-					{/* Closed weekdays：太字をやめ、2列グリッド */}
-					<div style={{ marginTop: "10px" }}>
-						<div style={{ marginBottom: "6px" }}>
-							{__("Closed weekdays", "itmaroon-booking-block")}
-						</div>
-						<div
-							style={{
-								display: "grid",
-								gridTemplateColumns: "1fr 1fr",
-								gap: "6px 12px",
-							}}
-						>
-							{WEEKDAYS.map((d) => (
-								<ToggleControl
-									key={d.key}
-									label={d.label}
-									checked={(closedWeekdays || []).includes(d.key)}
-									onChange={() => onToggleClosed(d.key)}
-								/>
-							))}
-						</div>
-					</div>
-					<PanelBody
-						title={__("Time Span Setting", "itmaroon-booking-block")}
-						initialOpen={true}
-					>
-						<ToggleControl
-							label="Is All Day"
-							checked={isAllday}
-							onChange={() => setIsAllday(!isAllday)}
-						/>
-						{!isAllday && (
-							<>
-								<SelectControl
-									label={__("Time Spans", "itmaroon-booking-block")}
-									value={""}
-									options={[]}
-									onChange={() => {}}
-								/>
-
-								<PanelRow className="distance_row">
-									<TextControl
-										label={__("Start Time", "itmaroon-booking-block")}
-										type="time"
-										value={currentSpan.startTime} // "09:00" 形式
-										onChange={(val) =>
-											setTimeSpan({ ...currentSpan, startTime: val })
-										}
-									/>
-									<TextControl
-										label={__("End Time", "itmaroon-booking-block")}
-										type="time"
-										value={currentSpan.endTime} // "09:00" 形式
-										onChange={(val) =>
-											setTimeSpan({ ...currentSpan, endTime: val })
-										}
-									/>
-								</PanelRow>
-								<TextControl
-									label={__("Time travel(minutes)", "itmaroon-booking-block")}
-									type="number"
-									value={travel.toString()}
-									onChange={(v) => setTravel(Number(v) || 0)}
-								/>
-							</>
-						)}
-					</PanelBody>
-					<div style={{ marginTop: "10px" }}>
-						<Button
-							variant="primary"
-							onClick={addMonthSlots}
-							disabled={monthSaving}
-						>
-							{monthSaving
-								? __("Creating...", "itmaroon-booking-block")
-								: __("Add slots (this month)", "itmaroon-booking-block")}
-						</Button>
-
-						{monthNotice.message && (
-							<div style={{ marginTop: "8px" }}>
-								<Notice
-									status={monthNotice.status}
-									onRemove={() =>
-										setMonthNotice({ status: undefined, message: "" })
-									}
-								>
-									{monthNotice.message}
-								</Notice>
-							</div>
-						)}
-					</div>
-					<div style={{ marginTop: "8px", fontSize: 12 }}>
-						{__("Dates to be created:", "itmaroon-booking-block")}{" "}
-						{datesToCreate.length}
-					</div>
-				</PanelBody>
 				{/* 選択日（例外）編集 */}
 				<PanelBody
 					title={__("User setteing Display Disp", "itmaroon-booking-block")}
@@ -1642,6 +1090,23 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 						initialOpen={false}
 					>
 						<SelectControl
+							label={__("Resource Title (outside the dialog)", "itmaroon-booking-block")}
+							value={dispUniqueIds.resourceTitle}
+							options={titleBlockOptions}
+							onChange={(val) => {
+								setAttributes({
+									dispUniqueIds: {
+										...dispUniqueIds,
+										resourceTitle: val,
+									},
+								});
+							}}
+							help={__(
+								"Shows the name of the selected resource in this title, outside the reservation dialog, so that visitors can tell what they are booking.",
+								"itmaroon-booking-block",
+							)}
+						/>
+						<SelectControl
 							label={__("Resource Name", "itmaroon-booking-block")}
 							value={dispUniqueIds.resourceName}
 							options={titleBlockOptions}
@@ -1681,7 +1146,7 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 							}}
 						/>
 						<SelectControl
-							label={__("Guest Count", "itmaroon-booking-block")}
+							label={__("Reserve Time", "itmaroon-booking-block")}
 							value={dispUniqueIds.reserveTime}
 							options={titleBlockOptions}
 							onChange={(val) => {
@@ -1692,6 +1157,51 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 									},
 								});
 							}}
+						/>
+						<SelectControl
+							label={__("Selected Date (calendar)", "itmaroon-booking-block")}
+							value={dispUniqueIds.selectedDate}
+							options={titleBlockOptions}
+							onChange={(val) => {
+								setAttributes({
+									dispUniqueIds: {
+										...dispUniqueIds,
+										selectedDate: val,
+									},
+								});
+							}}
+							help={__(
+								"Shows the date chosen in the calendar in this title, outside the reservation dialog.",
+								"itmaroon-booking-block",
+							)}
+						/>
+						<SelectControl
+							label={__("Weekday and Holiday (selected date)", "itmaroon-booking-block")}
+							value={dispUniqueIds.selectedDateNote}
+							options={titleBlockOptions}
+							onChange={(val) => {
+								setAttributes({
+									dispUniqueIds: {
+										...dispUniqueIds,
+										selectedDateNote: val,
+									},
+								});
+							}}
+							help={__(
+								"Shows the weekday of the date chosen in the calendar, followed by the holiday name if it is a holiday. Hidden until a date is chosen.",
+								"itmaroon-booking-block",
+							)}
+						/>
+						<TextControl
+							label={__("Text before a date is selected", "itmaroon-booking-block")}
+							value={selectedDatePlaceholder ?? ""}
+							onChange={(val: string) =>
+								setAttributes({ selectedDatePlaceholder: val || undefined })
+							}
+							help={__(
+								"Shown in the Selected Date title until a date is chosen in the calendar. A date-format title cannot be typed into directly, so set the text here.",
+								"itmaroon-booking-block",
+							)}
 						/>
 					</PanelBody>
 				</PanelBody>
@@ -1820,20 +1330,18 @@ export default function Edit(props: BlockEditProps<BookingAttributes>) {
 				</PanelBody>
 			</InspectorControls>
 
-			{isModalOpen && (
-				<SlotEditModal
-					resourceId={resourceId}
-					selDate={selectedDateYmd || ""}
-					rows={slotRows}
-					onClose={() => setIsModalOpen(false)}
-					onSaveSuccess={() => setLastUpdated(Date.now())} // 保存成功時に現在時刻をセット
-				/>
-			)}
-
 			<div
 				{...innerBlocksProps}
-				ref={containerRef}
-				onClickCapture={onTableClick}
+				style={{
+					...innerBlocksProps.style,
+					//日付の色は、design-calender の休日・土曜の色に合わせる
+					...(calendarFromInner?.attributes?.holidayColor && {
+						"--itmar-cal-holiday": calendarFromInner.attributes.holidayColor,
+					}),
+					...(calendarFromInner?.attributes?.staturdayColor && {
+						"--itmar-cal-saturday": calendarFromInner.attributes.staturdayColor,
+					}),
+				}}
 			/>
 		</>
 	);

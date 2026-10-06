@@ -6,7 +6,7 @@
  * Description:       Provides a reservation calendar block with capacity and booking management.
  * Requires at least: 6.4
  * Requires PHP:      8.2
- * Version:           1.0.0
+ * Version:           1.1.0
  * Author:            Web Creator ITmaroon
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
@@ -31,6 +31,9 @@ if (! function_exists('get_plugin_data')) {
 // クラス衝突を避けるため、ITMAR の専用ローダーを使用します。
 require_once __DIR__ . '/vendor/itmar/loader-package/src/register_autoloader.php';
 
+// サンプル（ブロックパターン）の登録
+require_once __DIR__ . '/patterns/register.php';
+
 /**
  * Register REST API hooks.
  */
@@ -38,8 +41,20 @@ function itmaroon_booking_block_load_rest_api()
 {
 	\Itmar\BookingClassPackage\Reservation\SlotsAPI::init();
 	\Itmar\BookingClassPackage\Reservation\BookingAPI::init();
+	\Itmar\BookingClassPackage\Reservation\AdminAPI::init();
 }
 add_action('plugins_loaded', 'itmaroon_booking_block_load_rest_api');
+
+/**
+ * 管理画面のメニュー「予約管理」。枠・ユニット・予約の操作はここで行う。
+ */
+function itmaroon_booking_block_load_admin()
+{
+	if (is_admin()) {
+		\Itmar\BookingClassPackage\Admin\AdminPage::init(__FILE__);
+	}
+}
+add_action('plugins_loaded', 'itmaroon_booking_block_load_admin');
 
 /**
  * Register blocks provided by this plugin.

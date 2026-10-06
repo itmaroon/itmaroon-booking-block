@@ -121,6 +121,9 @@
 		"lastClickedCell": {
 			"type": "object",
 			"default": null
+		},
+		"selectedDatePlaceholder": {
+			"type": "string"
 		}
 	},
 	

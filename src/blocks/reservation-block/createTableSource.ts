@@ -1,3 +1,4 @@
+import { __, sprintf } from '@wordpress/i18n';
 import {
 	generateGridAreas,
 	getMonthRangeYmd,
@@ -186,6 +187,7 @@ export const buildCalendarTableSource = (
 		headerFormatter = ( w ) => w.charAt( 0 ).toUpperCase() + w.slice( 1 ),
 		renderCell,
 		renderStyle,
+		compactBlanks = false,
 	}: BuildCalendarOptions
 ): TableSource => {
 	if (
@@ -240,11 +242,15 @@ export const buildCalendarTableSource = (
 	for ( const line of weekLines ) {
 		const tokens = line.split( /\s+/ );
 
-		tableSource.push( {
-			cells: tokens.map( ( token ): TableCell => {
+		const rowCells = tokens.map( ( token ): TableCell => {
 				const m = token.match( /^day(\d+)$/ );
 				if ( ! m ) {
-					return { tag: 'td' as const, content: '' };
+					// 日付のないセル。クラスで見分けて、見た目を出さないようにする
+					return {
+						tag: 'td' as const,
+						content: '',
+						attributes: { class: BLANK_CELL_CLASS },
+					};
 				}
 
 				const dayNum = Number( m[ 1 ] );
@@ -280,11 +286,47 @@ export const buildCalendarTableSource = (
 						'data-slotStatus': dayObj.slotStatus || '',
 					},
 				};
-			} ),
+			} );
+
+		tableSource.push( {
+			cells: compactBlanks ? compactBlankCells( rowCells ) : rowCells,
 		} );
 	}
 
 	return tableSource;
+};
+
+/** 日付のないセルに付けるクラス */
+const BLANK_CELL_CLASS = 'itmar_cell_blank';
+
+/**
+ * 日付のないセルを減らす。週の末尾の空きセルは、なくても列がずれないので出さない。
+ * 週の先頭の空きセルは、日付の列をそろえるために必要なので、1つのセル（colspan）にまとめる。
+ */
+const compactBlankCells = ( cells: TableCell[] ): TableCell[] => {
+	const isBlank = ( cell: TableCell ) =>
+		cell.attributes?.class === BLANK_CELL_CLASS;
+
+	let end = cells.length;
+	while ( end > 0 && isBlank( cells[ end - 1 ] ) ) {
+		end--;
+	}
+	let lead = 0;
+	while ( lead < end && isBlank( cells[ lead ] ) ) {
+		lead++;
+	}
+
+	const head: TableCell[] =
+		lead > 0
+			? [
+					{
+						tag: 'td' as const,
+						content: '',
+						attributes: { class: BLANK_CELL_CLASS, colspan: lead },
+					},
+			  ]
+			: [];
+	return [ ...head, ...cells.slice( lead, end ) ];
 };
 
 export const buildTimeTableSource = (
@@ -318,14 +360,38 @@ export const buildTimeTableSource = (
 
 		const renderContent =
 			renderStyle.remainDisp === 'number'
-				? `remain: ${ stats.avail }`
+				? sprintf(
+						/* translators: %d: number of remaining slots */
+						__( 'Remaining %d', 'itmaroon-booking-block' ),
+						stats.avail
+				  )
 				: remaindMark;
 
 		const cursorDisp = ! stats.avail ? 'default' : 'pointer';
 
+		// 時間のセルも状態のセルも同じ属性を持たせ、行のどちらをクリックしても同じ動きにする。
+		// 状態の色も両方に付けて、行全体を1つの項目に見せる。満席の行は is-full で見分ける。
+		const rowAttributes = {
+			'data-time': time,
+			'data-avail': stats.avail,
+			'data-state':
+				stats.avail === 0
+					? 'empty'
+					: Number( stats.avail ) / Number( stats.total ) <
+					  renderStyle.enoughBorder / 100
+					? 'low'
+					: 'enough',
+			...( stats.avail ? {} : { class: 'is-full' } ),
+		};
+
 		tableSource.push( {
 			cells: [
-				{ tag: 'td', content: time },
+				{
+					tag: 'td',
+					content: time,
+					style: { background: cellBackground, cursor: cursorDisp },
+					attributes: rowAttributes,
+				},
 				{
 					tag: 'td',
 					content: renderContent,
@@ -334,10 +400,7 @@ export const buildTimeTableSource = (
 						textAlign: 'center',
 						cursor: cursorDisp,
 					},
-					attributes: {
-						'data-time': time,
-						'data-avail': stats.avail,
-					},
+					attributes: rowAttributes,
 				},
 			],
 		} );
@@ -452,6 +515,14 @@ export const renderBookingCellHtml = (
 			? '〇'
 			: '';
 
+	// 日付の色の区別。design-calender と同じ（日曜か祝日は休日の色、土曜は土曜の色）
+	const dayKind =
+		dayObj?.weekday === 0 || dayObj?.holiday
+			? ' is-holiday'
+			: dayObj?.weekday === 6
+			? ' is-saturday'
+			: '';
+
 	// 「holiday」文字
 	const holiday =
 		dayObj?.holiday && dayObj.holiday !== 'holiday'
@@ -459,16 +530,16 @@ export const renderBookingCellHtml = (
 			: '';
 
 	return `
-		<div style="line-height:1.3; min-height: 50px;">
-            <div style="font-weight:600;">${ dayNum }</div>
+		<div class="itmar_cell" style="line-height:1.3; min-height: 50px;">
+            <div class="itmar_cell_day${ dayKind }" style="font-weight:600;">${ dayNum }</div>
 			${
 				renderStyle.isDispHoliday
-					? `<div style="font-size:11px; opacity:0.8;">${ holiday }</div>`
+					? `<div class="itmar_cell_holiday" style="font-size:11px; opacity:0.8;">${ holiday }</div>`
 					: ''
 			}
             ${
 				status === 'closed'
-					? `<div style="color:red; font-size:10px;">${ escapeHtml(
+					? `<div class="itmar_cell_rest" style="color:red; font-size:10px;">${ escapeHtml(
 							renderStyle.restDisp ?? ''
 					  ) }</div>`
 					: ''

@@ -120,6 +120,9 @@
     "lastClickedCell": {
       "type": "object",
       "default": null
+    },
+    "selectedDatePlaceholder": {
+      "type": "string"
     }
   },
   "textdomain": "itmaroon-booking-block",
