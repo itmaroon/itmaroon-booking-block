@@ -102,3 +102,19 @@
 		min-width: 100%;
 	}
 }
+
+// 予約リソースが未設定のときの案内（view.ts）。見た目は、テーマで上書きできる
+.wp-block-itmar-reservation-block > .itmar-reservation-notice {
+	margin: 0 0 1em;
+	padding: 0.75em 1em;
+	border: 1px dashed currentColor;
+	font-size: 0.9em;
+
+	p {
+		margin: 0;
+	}
+
+	p + p {
+		margin-top: 0.5em;
+	}
+}

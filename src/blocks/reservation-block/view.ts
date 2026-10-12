@@ -62,6 +62,36 @@ jQuery(function ($) {
 		//要素の存在チェック
 		if (!$calendar.length || !$table.length) return;
 
+		// 予約リソースが未設定のとき（ほかのサイトへ移した直後など。リソースの番号は、サイトごとの内容なので、移されない）は、
+		// 予約を受け付けられない。何も起きずに止まらないように、理由を、ブロックの上に表示する。
+		if (!resourceId) {
+			const $notice = $("<div>", {
+				class: "itmar-reservation-notice",
+				role: "status",
+			});
+			$("<p>")
+				.text(
+					__(
+						"Reservations cannot be taken yet because no reservation resource is selected for this block.",
+						"itmaroon-booking-block",
+					),
+				)
+				.appendTo($notice);
+			// 手順は、サイトを管理できる人（ログイン中）にだけ見せる
+			if (document.body.classList.contains("logged-in")) {
+				$("<p>")
+					.text(
+						__(
+							"Create a resource in the Reservation Management screen, then select it in the settings of the Reservation block (in the site editor).",
+							"itmaroon-booking-block",
+						),
+					)
+					.appendTo($notice);
+			}
+			$root.prepend($notice);
+			return;
+		}
+
 		const MONTH_SELECT = ".itmar_block_selectSingle select";
 
 		let timer = 0;
@@ -759,5 +789,20 @@ jQuery(function ($) {
 				}
 			}
 		});
+
+		// 最初の描画。祝日の取得（Google の API キーが要る）がうまくいかなくても、月が決まったら描画する。
+		// 祝日データの書き込みを待つだけだと、API キーの無いサイトで、カレンダーが動かないままになる
+		let initialTries = 0;
+		const initialRender = () => {
+			if ($calendar.find(MONTH_SELECT).val()) {
+				schedule();
+				return;
+			}
+			//月のセレクトは、カレンダーのブロックが作るので、できるまで待つ
+			if (++initialTries < 50) {
+				window.setTimeout(initialRender, 100);
+			}
+		};
+		initialRender();
 	});
 });

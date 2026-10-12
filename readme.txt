@@ -3,7 +3,7 @@ Contributors:      itmaroon
 Tags:              booking, reservation, block
 Requires at least: 6.4
 Tested up to:      7.1
-Stable tag:        1.1.0
+Stable tag:        1.1.2
 Requires PHP:      8.2
 License:           GPL-2.0-or-later
 License URI:       https://www.gnu.org/licenses/gpl-2.0.html
@@ -41,6 +41,13 @@ The plugin stores reservation data in the site's WordPress database. It does not
 
 
 == Changelog ==
+= 1.1.2 =
+* The Reservation block now shows a notice when no reservation resource is selected (for example right after moving a theme to another site), instead of silently doing nothing. Logged-in users also see the steps to fix it.
+
+= 1.1.1 =
+* Fixed: the reservation calendar now draws as soon as the page is shown. Before, it stayed inactive on sites without a Google Calendar API key, because the first drawing waited for the holiday data.
+* The confirmation step of the ready-made reservation patterns now shows a real message instead of the placeholder text.
+
 = 1.1.0 =
 * New admin menu "Reservation Management": manage slots, resource units and bookings in the admin screen instead of the block editor.
 * Slots can be deleted a month at a time. The request is refused, with the dates that are the cause, when any slot is already booked.
@@ -52,6 +59,12 @@ The plugin stores reservation data in the site's WordPress database. It does not
 * Initial release.
 
 == Upgrade Notice ==
+= 1.1.2 =
+Adds a notice when a Reservation block has no resource selected. No configuration changes are required.
+
+= 1.1.1 =
+Fixes the reservation calendar not responding on sites without a Google Calendar API key. Update recommended; no configuration changes are required.
+
 = 1.1.0 =
 Adds the "Reservation Management" admin screen and ready-made reservation patterns. No configuration changes are required.
 

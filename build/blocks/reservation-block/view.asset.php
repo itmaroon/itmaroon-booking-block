@@ -6,5 +6,5 @@
 		'wp-date',
 		'wp-i18n'
 	),
-	'version' => '37db085b55df283dde01'
+	'version' => '8da14e3326550ad75599'
 );
